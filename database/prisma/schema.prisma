@@ -1,0 +1,740 @@
+// ==============================================================================
+// SkillDNA AI - Complete Master Prisma ORM Database Schema
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==============================================================================
+// ENUM DEFINITIONS
+// ==============================================================================
+
+enum UserRole {
+  STUDENT
+  RECRUITER
+  MENTOR
+  UNIVERSITY
+  ADMIN
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  GITHUB
+  LINKEDIN
+}
+
+enum DegreeType {
+  BACHELORS
+  MASTERS
+  DOCTORATE
+  ASSOCIATE
+  DIPLOMA
+  CERTIFICATE
+  OTHER
+}
+
+enum SkillCategory {
+  LANGUAGES
+  FRONTEND
+  BACKEND
+  DATABASE
+  DEVOPS
+  AI_ML
+  TESTING
+  SECURITY
+  ARCHITECTURE
+  CLOUD
+  OTHER
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+  MASTER
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ProjectCategory {
+  WEB_APP
+  MOBILE_APP
+  BACKEND_SERVICE
+  AI_ML_MODEL
+  CLI_TOOL
+  OPEN_SOURCE
+  OTHER
+}
+
+enum DifficultyLevel {
+  EASY
+  MEDIUM
+  HARD
+  EXPERT
+}
+
+enum CertificationStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+  PENDING_VERIFICATION
+}
+
+enum HackathonRole {
+  SOLO_DEVELOPER
+  TEAM_LEAD
+  FRONTEND_DEV
+  BACKEND_DEV
+  AI_ENGINEER
+  DESIGNER
+}
+
+enum PlatformType {
+  GITHUB
+  LEETCODE
+  HACKERRANK
+  LINKEDIN
+  KAGGLE
+  CODECHEF
+  CODEFORCES
+}
+
+enum ReportType {
+  SKILLDNA_FULL
+  QUICK_AUDIT
+  CAREER_GAP
+  PORTFOLIO_REVIEW
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  REMOTE
+}
+
+enum ReadinessLevel {
+  NOT_READY
+  DEVELOPING
+  JOB_READY
+  HIGHLY_QUALIFIED
+  EXCEPTIONAL
+}
+
+enum VerificationMethod {
+  COMMIT_AUDIT
+  CODE_EXECUTION
+  CERTIFICATE_METADATA
+  MANUAL_REVIEW
+  AI_INSPECTION
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  REGISTER
+  UPDATE_PROFILE
+  DELETE_ACCOUNT
+  GENERATE_REPORT
+  VERIFY_SKILL
+  CREATE_JOB
+  DELETE_JOB
+}
+
+enum NotificationType {
+  SYSTEM
+  SKILL_VERIFIED
+  REPORT_READY
+  JOB_MATCH
+  APPLICATION_UPDATE
+  MENTOR_MESSAGE
+}
+
+enum SubscriptionPlan {
+  FREE
+  PRO_STUDENT
+  RECRUITER_BASIC
+  RECRUITER_ENTERPRISE
+  UNIVERSITY_TIER
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  TRIALING
+}
+
+// ==============================================================================
+// DOMAIN 1: USER & AUTHENTICATION MODELS
+// ==============================================================================
+
+model User {
+  id                 String              @id @default(uuid())
+  email              String              @unique
+  passwordHash       String?
+  firstName          String
+  lastName           String
+  role               UserRole            @default(STUDENT)
+  status             AccountStatus       @default(ACTIVE)
+  provider           AuthProvider        @default(LOCAL)
+  emailVerified      Boolean             @default(false)
+  avatarUrl          String?
+  bio                String?
+  headline           String?
+  location           String?
+  websiteUrl         String?
+  githubUsername     String?
+  leetcodeUsername   String?
+  hackerrankUsername String?
+  linkedinUrl        String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  deletedAt          DateTime?
+
+  // Relations
+  profile              UserProfile?
+  refreshTokens        RefreshToken[]
+  sessions             UserSession[]
+  educations           Education[]
+  userSkills           UserSkill[]
+  projects             Project[]
+  certifications       Certification[]
+  hackathons           Hackathon[]
+  integrations         PlatformIntegration[]
+  gitHubStats          GitHubStat[]
+  codingStats          CodingStat[]
+  reports              SkillDnaReport[]
+  readinessEvaluations CareerReadiness[]
+  skillVerifications   SkillVerification[]
+  verificationsAudited SkillVerification[]   @relation("VerifiedByAdmin")
+  resumeAnalyses       ResumeAnalysis[]
+  portfolioAnalyses    PortfolioAnalysis[]
+  aiChats              AiChatHistory[]
+  organizationMembers  OrganizationMember[]
+  createdJobs          JobPosting[]          @relation("JobCreatedBy")
+  auditLogs            AuditLog[]
+  notifications        Notification[]
+  subscriptions        Subscription[]
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model UserSession {
+  id           String   @id @default(uuid())
+  userId       String
+  sessionToken String   @unique
+  ipAddress    String?
+  userAgent    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+model UserProfile {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  summary             String?  @db.Text
+  targetRole          String?
+  yearsOfExperience   Int      @default(0)
+  expectedSalary      Int?
+  availabilityStatus  String?  @default("OPEN_TO_WORK")
+  totalSkillDnaScore  Float    @default(0.0)
+  totalReadinessScore Float    @default(0.0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+// ==============================================================================
+// DOMAIN 2: SKILLS & PORTFOLIO MODELS
+// ==============================================================================
+
+model Education {
+  id           String     @id @default(uuid())
+  userId       String
+  institution  String
+  degree       DegreeType @default(BACHELORS)
+  fieldOfStudy String
+  startYear    Int
+  endYear      Int?
+  grade        String?
+  description  String?    @db.Text
+  isCurrent    Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("educations")
+}
+
+model Skill {
+  id          String        @id @default(uuid())
+  name        String        @unique
+  slug        String        @unique
+  category    SkillCategory @default(OTHER)
+  description String?       @db.Text
+  iconUrl     String?
+  createdAt   DateTime      @default(now())
+
+  userSkills         UserSkill[]
+  projectSkills      ProjectSkill[]
+  skillVerifications SkillVerification[]
+
+  @@index([category])
+  @@index([slug])
+  @@map("skills")
+}
+
+model UserSkill {
+  id                String           @id @default(uuid())
+  userId            String
+  skillId           String
+  proficiency       ProficiencyLevel @default(BEGINNER)
+  verified          Boolean          @default(false)
+  verifiedScore     Float            @default(0.0)
+  selfRating        Int              @default(1)
+  yearsOfExperience Float            @default(0.0)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillId])
+  @@index([userId])
+  @@index([skillId])
+  @@map("user_skills")
+}
+
+model Project {
+  id          String          @id @default(uuid())
+  userId      String
+  title       String
+  slug        String
+  description String          @db.Text
+  category    ProjectCategory @default(WEB_APP)
+  repoUrl     String?
+  liveUrl     String?
+  techStack   String[]
+  starsCount  Int             @default(0)
+  forksCount  Int             @default(0)
+  linesOfCode Int             @default(0)
+  status      String          @default("COMPLETED")
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectSkills ProjectSkill[]
+
+  @@unique([userId, slug])
+  @@index([userId])
+  @@map("projects")
+}
+
+model ProjectSkill {
+  id        String @id @default(uuid())
+  projectId String
+  skillId   String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  skill   Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, skillId])
+  @@map("project_skills")
+}
+
+model Certification {
+  id                  String              @id @default(uuid())
+  userId              String
+  title               String
+  issuingOrganization String
+  credentialId        String?
+  credentialUrl       String?
+  issueDate           DateTime
+  expiryDate          DateTime?
+  doesNotExpire       Boolean             @default(false)
+  isVerified          Boolean             @default(false)
+  status              CertificationStatus @default(ACTIVE)
+  createdAt           DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("certifications")
+}
+
+model Hackathon {
+  id             String        @id @default(uuid())
+  userId         String
+  name           String
+  projectTitle   String
+  role           HackathonRole @default(SOLO_DEVELOPER)
+  description    String        @db.Text
+  projectUrl     String?
+  repositoryUrl  String?
+  position       String?       @default("PARTICIPANT")
+  prizeAmount    String?
+  eventDate      DateTime
+  isVerified     Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("hackathons")
+}
+
+// ==============================================================================
+// DOMAIN 3: PLATFORM INTEGRATIONS & STATS
+// ==============================================================================
+
+model PlatformIntegration {
+  id           String       @id @default(uuid())
+  userId       String
+  platform     PlatformType
+  username     String
+  accessToken  String?
+  refreshToken String?
+  isConnected  Boolean      @default(true)
+  lastSyncedAt DateTime?
+  syncStatus   String       @default("IDLE")
+  metadata     Json?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform])
+  @@index([userId])
+  @@map("platform_integrations")
+}
+
+model GitHubStat {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  publicRepos       Int      @default(0)
+  totalStars        Int      @default(0)
+  totalForks        Int      @default(0)
+  totalCommits      Int      @default(0)
+  PRsCreated        Int      @default(0)
+  issuesSolved      Int      @default(0)
+  topLanguages      Json?
+  contributionGraph Json?
+  syncedAt          DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("github_stats")
+}
+
+model CodingStat {
+  id            String       @id @default(uuid())
+  userId        String
+  platform      PlatformType
+  totalSolved   Int          @default(0)
+  easySolved    Int          @default(0)
+  mediumSolved  Int          @default(0)
+  hardSolved    Int          @default(0)
+  ranking       Int?
+  contestRating Float?
+  badgesCount   Int          @default(0)
+  syncedAt      DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform])
+  @@index([userId])
+  @@map("coding_stats")
+}
+
+// ==============================================================================
+// DOMAIN 4: AI INTELLIGENCE MODELS
+// ==============================================================================
+
+model SkillDnaReport {
+  id                    String     @id @default(uuid())
+  userId                String
+  reportType            ReportType @default(SKILLDNA_FULL)
+  overallScore          Float      @default(0.0)
+  codeQualityScore      Float      @default(0.0)
+  problemSolvingScore   Float      @default(0.0)
+  systemDesignScore     Float      @default(0.0)
+  breadthScore          Float      @default(0.0)
+  consistencyScore      Float      @default(0.0)
+  strengths             String[]
+  weaknesses            String[]
+  recommendationSummary String     @db.Text
+  rawAiOutput           Json?
+  generatedAt           DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("skill_dna_reports")
+}
+
+model CareerReadiness {
+  id                   String         @id @default(uuid())
+  userId               String
+  targetRole           String
+  readinessScore       Float          @default(0.0)
+  readinessLevel       ReadinessLevel @default(DEVELOPING)
+  skillMatchPercentage Float          @default(0.0)
+  missingSkills        String[]
+  recommendedActions   String[]
+  evaluatedAt          DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("career_readiness")
+}
+
+model SkillVerification {
+  id                 String             @id @default(uuid())
+  userId             String
+  skillId            String
+  verificationMethod VerificationMethod @default(COMMIT_AUDIT)
+  verificationScore  Float              @default(0.0)
+  proofUrl           String?
+  evidenceDetails    Json?
+  verifiedByUserId   String?
+  verifiedAt         DateTime           @default(now())
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill      Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  verifiedBy User? @relation("VerifiedByAdmin", fields: [verifiedByUserId], references: [id])
+
+  @@index([userId])
+  @@index([skillId])
+  @@map("skill_verifications")
+}
+
+model ResumeAnalysis {
+  id                   String   @id @default(uuid())
+  userId               String
+  resumeUrl            String
+  parsedSkills         String[]
+  experienceMatchScore Float    @default(0.0)
+  formattingScore      Float    @default(0.0)
+  keywordGaps          String[]
+  aiFeedback           String   @db.Text
+  analyzedAt           DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("resume_analyses")
+}
+
+model PortfolioAnalysis {
+  id                  String   @id @default(uuid())
+  userId              String
+  portfolioUrl        String
+  overallDesignScore  Float    @default(0.0)
+  codeQualityScore    Float    @default(0.0)
+  documentationScore  Float    @default(0.0)
+  responsivenessScore Float    @default(0.0)
+  aiFeedback          String   @db.Text
+  analyzedAt          DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("portfolio_analyses")
+}
+
+model AiChatHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  sessionTitle String   @default("AI Mentor Session")
+  messages     Json
+  totalTokens  Int      @default(0)
+  modelUsed    String   @default("gemini-1.5-pro")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("ai_chat_histories")
+}
+
+// ==============================================================================
+// DOMAIN 5: ORGANIZATIONS & RECRUITMENT
+// ==============================================================================
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  logoUrl     String?
+  websiteUrl  String?
+  industry    String?
+  companySize String?
+  description String?  @db.Text
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members       OrganizationMember[]
+  jobPostings   JobPosting[]
+  subscriptions Subscription[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  role           UserRole @default(RECRUITER)
+  joinedAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@map("organization_members")
+}
+
+model JobPosting {
+  id                    String   @id @default(uuid())
+  organizationId        String
+  createdByUserId       String
+  title                 String
+  slug                  String
+  description           String   @db.Text
+  location              String   @default("REMOTE")
+  jobType               JobType  @default(FULL_TIME)
+  targetExperienceYears Int      @default(0)
+  requiredSkills        String[]
+  salaryMin             Int?
+  salaryMax             Int?
+  status                String   @default("ACTIVE")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("JobCreatedBy", fields: [createdByUserId], references: [id])
+
+  @@index([organizationId])
+  @@map("job_postings")
+}
+
+// ==============================================================================
+// DOMAIN 6: SYSTEM, GOVERNANCE & AUDIT
+// ==============================================================================
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  userId     String?
+  action     AuditAction
+  entityName String
+  entityId   String?
+  payload    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType @default(SYSTEM)
+  title     String
+  message   String           @db.Text
+  link      String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@map("notifications")
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  userId             String?
+  organizationId     String?
+  plan               SubscriptionPlan   @default(FREE)
+  status             SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime           @default(now())
+  currentPeriodEnd   DateTime
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model SystemMetric {
+  id          String   @id @default(uuid())
+  metricName  String
+  metricValue Float
+  dimensions  Json?
+  timestamp   DateTime @default(now())
+
+  @@index([metricName])
+  @@index([timestamp])
+  @@map("system_metrics")
+}

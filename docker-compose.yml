@@ -1,0 +1,138 @@
+version: '3.8'
+
+services:
+  # Primary Relational Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: skilldna_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-skilldna_user}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-skilldna_password}
+      POSTGRES_DB: ${DATABASE_NAME:-skilldna_db}
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - skilldna_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-skilldna_user} -d ${DATABASE_NAME:-skilldna_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # In-Memory Cache and Queue Service
+  redis:
+    image: redis:7-alpine
+    container_name: skilldna_redis
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_password}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - skilldna_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend REST API Service
+  backend:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    container_name: skilldna_backend
+    restart: always
+    ports:
+      - "${SERVER_PORT:-5000}:5000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://${DATABASE_USER:-skilldna_user}:${DATABASE_PASSWORD:-skilldna_password}@postgres:5432/${DATABASE_NAME:-skilldna_db}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_password}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - skilldna_network
+
+  # Frontend Web Application (Next.js)
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+    container_name: skilldna_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      NEXT_PUBLIC_API_URL: ${CLIENT_URL:-http://localhost:5000/api/v1}
+    depends_on:
+      - backend
+    networks:
+      - skilldna_network
+
+  # Background Asynchronous Worker Service
+  worker:
+    build:
+      context: .
+      dockerfile: ./worker/Dockerfile
+    container_name: skilldna_worker
+    restart: always
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://${DATABASE_USER:-skilldna_user}:${DATABASE_PASSWORD:-skilldna_password}@postgres:5432/${DATABASE_NAME:-skilldna_db}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_password}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - skilldna_network
+
+  # Prisma Studio Database UI (Optional Profile)
+  prisma-studio:
+    build:
+      context: .
+      dockerfile: ./database/Dockerfile
+    container_name: skilldna_prisma_studio
+    profiles:
+      - tools
+    ports:
+      - "5555:5555"
+    command: pnpm prisma studio --port 5555
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - skilldna_network
+
+networks:
+  skilldna_network:
+    driver: bridge
+    name: skilldna_network
+
+volumes:
+  postgres_data:
+    name: skilldna_postgres_data
+  redis_data:
+    name: skilldna_redis_data

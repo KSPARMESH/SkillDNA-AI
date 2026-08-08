@@ -1,0 +1,7 @@
+graph TD
+    Client[Client Web Application / Next.js] -->|HTTP / REST| API[Backend REST API / Express.js]
+    API -->|Auth / Middleware| Auth[JWT & OAuth Security]
+    API -->|ORM Access| DB[(PostgreSQL Database)]
+    API -->|Job Dispatch| Queue[Redis / BullMQ Queue]
+    Queue --> Worker[Background Worker Service]
+    Worker -->|AI Analytics| Gemini[Gemini AI Engine]

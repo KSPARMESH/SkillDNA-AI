@@ -1,0 +1,10 @@
+{
+  "title": "SkillDNA AI System Dashboard",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "API HTTP Request Rate",
+      "targets": [{ "expr": "rate(http_requests_total[5m])" }]
+    }
+  ]
+}

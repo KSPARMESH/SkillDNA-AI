@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skilldna-backend
+  labels:
+    app: skilldna-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: skilldna-backend
+  template:
+    metadata:
+      labels:
+        app: skilldna-backend
+    spec:
+      containers:
+      - name: backend
+        image: skilldna-backend:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: NODE_ENV
+          value: "production"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: skilldna-backend-service
+spec:
+  selector:
+    app: skilldna-backend
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000

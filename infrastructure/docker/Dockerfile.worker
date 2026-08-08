@@ -1,0 +1,17 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package.json pnpm-workspace.yaml turbo.json ./
+COPY worker/package.json ./worker/
+COPY shared/package.json ./shared/
+RUN npm install -g pnpm && pnpm install --frozen-lockfile
+COPY worker ./worker
+COPY shared ./shared
+RUN pnpm --filter @skilldna/worker build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app/worker/dist ./dist
+COPY --from=builder /app/worker/package.json ./
+RUN npm install -g pnpm && pnpm install --prod
+CMD ["node", "dist/index.js"]

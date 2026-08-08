@@ -1,0 +1,32 @@
+{
+  "name": "@skilldna/database",
+  "version": "1.0.0",
+  "description": "SkillDNA AI Database Package - Prisma ORM Schemas, Migrations, Seeders & Utilities",
+  "private": true,
+  "main": "prisma/index.ts",
+  "types": "prisma/types.ts",
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "ts-node prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "build": "tsc -b",
+    "clean": "rimraf dist node_modules/.prisma",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "prisma": "^6.2.1",
+    "rimraf": "^6.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  }
+}

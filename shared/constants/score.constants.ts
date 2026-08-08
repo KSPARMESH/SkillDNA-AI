@@ -1,0 +1,9 @@
+export const SKILLDNA_MAX_SCORE = 100.0;
+export const READINESS_THRESHOLD_JOB_READY = 75.0;
+export const READINESS_THRESHOLD_HIGHLY_QUALIFIED = 90.0;
+
+export const WEIGHT_CODE_QUALITY = 0.25;
+export const WEIGHT_PROBLEM_SOLVING = 0.25;
+export const WEIGHT_SYSTEM_DESIGN = 0.20;
+export const WEIGHT_BREADTH = 0.15;
+export const WEIGHT_CONSISTENCY = 0.15;

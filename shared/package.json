@@ -1,0 +1,19 @@
+{
+  "name": "@skilldna/shared",
+  "version": "1.0.0",
+  "description": "SkillDNA AI Shared Package - Universal Constants, Enums, Types, Interfaces & Utilities",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.3"
+  }
+}
