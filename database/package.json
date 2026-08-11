@@ -4,7 +4,7 @@
   "description": "SkillDNA AI Database Package - Prisma ORM Schemas, Migrations, Seeders & Utilities",
   "private": true,
   "main": "prisma/index.ts",
-  "types": "prisma/types.ts",
+  "types": "prisma/index.ts",
   "scripts": {
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -17,9 +17,11 @@
     "lint": "eslint . --ext .ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.2.1"
+    "@prisma/client": "^6.2.1",
+    "bcrypt": "^5.1.1"
   },
   "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
     "@types/node": "^22.10.7",
     "prisma": "^6.2.1",
     "rimraf": "^6.0.1",
