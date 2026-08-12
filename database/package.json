@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "SkillDNA AI Database Package - Prisma ORM Schemas, Migrations, Seeders & Utilities",
   "private": true,
-  "main": "prisma/index.ts",
-  "types": "prisma/index.ts",
+  "main": "dist/prisma/index.js",
+  "types": "dist/prisma/types.d.ts",
   "scripts": {
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
