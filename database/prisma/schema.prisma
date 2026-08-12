@@ -117,7 +117,12 @@ enum PlatformType {
   KAGGLE
   CODECHEF
   CODEFORCES
+  ATCODER
+  DEVPOST
+  MEDIUM
+  STACKOVERFLOW
 }
+
 
 enum ReportType {
   SKILLDNA_FULL
