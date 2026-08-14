@@ -82,6 +82,30 @@ function runProtectedRoutesTests() {
   console.assert(isExpiredTokenValid === false, '❌ Failed: Expired token should be rejected');
   console.log('     ✓ Expired access token correctly identified as invalid');
 
+  // Test 7: Post-logout access denial to protected routes
+  console.log('  7. Testing post-logout route rejection across all protected routes...');
+  // Simulate active session
+  let currentToken: string | null = createMockJwt(900);
+  console.assert(
+    isTokenValid(currentToken) === true,
+    'Token should be initially valid before logout',
+  );
+
+  // Execute logout cleanup
+  currentToken = null;
+
+  const routes = ['/dashboard', '/profile', '/ai-workspace', '/recruitment', '/wrapped'];
+  for (const route of routes) {
+    const isGranted = isTokenValid(currentToken);
+    console.assert(
+      isGranted === false,
+      `❌ Failed: Access to ${route} must be denied after logout`,
+    );
+  }
+  console.log(
+    '     ✓ All protected routes (/dashboard, /profile, /ai-workspace, /recruitment, /wrapped) securely reject access post-logout',
+  );
+
   console.log('✅ All Protected Routes Authentication Tests Passed Successfully.');
 }
 

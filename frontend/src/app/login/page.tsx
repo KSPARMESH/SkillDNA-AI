@@ -27,6 +27,9 @@ export default function LoginPage() {
         if (response.data.refreshToken) {
           localStorage.setItem('refreshToken', response.data.refreshToken);
         }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('auth-state-change'));
+        }
         router.push('/dashboard');
       } else {
         const errorMsg =

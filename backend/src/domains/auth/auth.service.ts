@@ -59,6 +59,19 @@ export class AuthService {
 
     const refreshToken = jwt.sign(payload, config.jwtRefreshSecret, { expiresIn: '7d' });
 
+    try {
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      await prisma.refreshToken.create({
+        data: {
+          token: refreshToken,
+          userId: user.id,
+          expiresAt,
+        },
+      });
+    } catch {
+      // Non-blocking fallback
+    }
+
     return {
       user: {
         id: user.id,
@@ -115,6 +128,19 @@ export class AuthService {
 
     const refreshToken = jwt.sign(payload, config.jwtRefreshSecret, { expiresIn: '7d' });
 
+    try {
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      await prisma.refreshToken.create({
+        data: {
+          token: refreshToken,
+          userId: user.id,
+          expiresAt,
+        },
+      });
+    } catch {
+      // Non-blocking fallback
+    }
+
     return {
       user: {
         id: user.id,
@@ -126,5 +152,62 @@ export class AuthService {
       accessToken,
       refreshToken,
     };
+  }
+
+  static async logout(userId: string, refreshToken?: string) {
+    if (!userId) {
+      throw new AppError(
+        'User ID is required for logout.',
+        HttpStatusCode.BAD_REQUEST,
+        ApiErrorCode.INVALID_INPUT,
+      );
+    }
+
+    // 1. Invalidate/revoke active refresh token(s) in the database
+    if (refreshToken) {
+      await prisma.refreshToken.updateMany({
+        where: {
+          token: refreshToken,
+          userId,
+          revoked: false,
+        },
+        data: {
+          revoked: true,
+        },
+      });
+    } else {
+      await prisma.refreshToken.updateMany({
+        where: {
+          userId,
+          revoked: false,
+        },
+        data: {
+          revoked: true,
+        },
+      });
+    }
+
+    // 2. Terminate active sessions for the user
+    await prisma.userSession.deleteMany({
+      where: {
+        userId,
+      },
+    });
+
+    // 3. Record audit log entry for logout
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: 'LOGOUT',
+          entityName: 'User',
+          entityId: userId,
+        },
+      });
+    } catch {
+      // Non-blocking audit log fallback
+    }
+
+    return { success: true };
   }
 }

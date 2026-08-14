@@ -64,13 +64,26 @@ export function getStoredAccessToken(): string | null {
 }
 
 /**
- * Clears authentication tokens from localStorage.
+ * Retrieves the stored refresh token from localStorage.
+ */
+export function getStoredRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem('refreshToken');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clears authentication tokens from localStorage and dispatches auth-state-change event.
  */
 export function clearAuthTokens(): void {
   if (typeof window !== 'undefined') {
     try {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
+      window.dispatchEvent(new Event('auth-state-change'));
     } catch {
       // ignore SSR or restricted storage errors
     }
