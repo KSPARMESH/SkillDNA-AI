@@ -31,7 +31,7 @@ export class GeminiProvider implements IGeminiProvider {
     }
 
     try {
-      const modelName = config.geminiModel || 'gemini-1.5-pro';
+      const modelName = config.geminiModel || 'gemini-2.5-flash';
       const model = this.genAI.getGenerativeModel({
         model: modelName,
         generationConfig: {

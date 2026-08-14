@@ -612,7 +612,43 @@ async function runAiDomainTests() {
     console.log('     ✓ All report generations preserved as immutable historical records');
   }
 
-  console.log('\n🎉 All 11 Backend SkillDNA AI Report Generation Tests Passed Successfully!');
+  // ---------------------------------------------------------------------------
+  // Test 12: Gemini Model Configuration & Override Verification
+  // ---------------------------------------------------------------------------
+  {
+    console.log('  12. Testing Gemini model name configuration and override...');
+    const { config } = await import('../../../config');
+
+    // Default model verification
+    assert.strictEqual(
+      config.geminiModel,
+      process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      'Configured Gemini model must default to gemini-2.5-flash or match GEMINI_MODEL env',
+    );
+    assert.notStrictEqual(
+      config.geminiModel,
+      'gemini-1.5-pro',
+      'Obsolete gemini-1.5-pro model must not be used',
+    );
+
+    // Verify report stores the configured model name in rawAiOutput
+    const latestReport = await prisma.skillDnaReport.findFirst({
+      where: { userId: user1Id },
+      orderBy: { generatedAt: 'desc' },
+    });
+    assert.ok(latestReport);
+    assert.strictEqual(
+      (latestReport.rawAiOutput as any)?.model,
+      config.geminiModel,
+      'Persisted report rawAiOutput must record the active model name',
+    );
+
+    console.log(
+      `     ✓ Model verified: '${config.geminiModel}' active and recorded in persistence`,
+    );
+  }
+
+  console.log('\n🎉 All 12 Backend SkillDNA AI Report Generation Tests Passed Successfully!');
 }
 
 runAiDomainTests()

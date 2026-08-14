@@ -53,7 +53,7 @@ export class AiService {
         weaknesses: validatedOutput.weaknesses,
         recommendationSummary: validatedOutput.recommendationSummary,
         rawAiOutput: {
-          model: config.geminiModel || 'gemini-1.5-pro',
+          model: config.geminiModel || 'gemini-2.5-flash',
           generatedAt: new Date().toISOString(),
           evaluatedContext: {
             totalProjects: context.evidenceSummary.totalProjects,
