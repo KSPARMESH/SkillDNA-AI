@@ -30,8 +30,9 @@ export class GeminiProvider implements IGeminiProvider {
       );
     }
 
+    const modelName = config.geminiModel || 'gemini-2.5-flash';
+
     try {
-      const modelName = config.geminiModel || 'gemini-2.5-flash';
       const model = this.genAI.getGenerativeModel({
         model: modelName,
         generationConfig: {
@@ -54,12 +55,33 @@ export class GeminiProvider implements IGeminiProvider {
         },
       };
     } catch (error: any) {
-      // Check for rate limit / quota exhaustion
       const errorMessage = String(error?.message || '');
+      const errorStatus =
+        error?.status ||
+        error?.statusCode ||
+        (errorMessage.match(/\[(\d{3})\s*[^\]]*\]/)?.[1]
+          ? parseInt(errorMessage.match(/\[(\d{3})\s*[^\]]*\]/)![1], 10)
+          : undefined);
+      const errorType = error?.name || error?.constructor?.name || 'UnknownGeminiError';
+
+      // Sanitize any potential API keys/tokens from error message before logging
+      const sanitizedErrorMessage = errorMessage.replace(/key=[A-Za-z0-9_-]+/gi, 'key=[REDACTED]');
+
+      // Diagnostic logging (safe metadata only - NEVER logs keys, tokens, or prompt data)
+      console.error('[GeminiProvider Diagnostic]', {
+        model: modelName,
+        isApiKeyConfigured: this.isConfigured(),
+        statusCode: errorStatus || null,
+        errorType,
+        providerErrorMessage: sanitizedErrorMessage,
+      });
+
+      // Check for rate limit / quota exhaustion
       const isRateLimit =
         errorMessage.includes('429') ||
         errorMessage.includes('RESOURCE_EXHAUSTED') ||
-        errorMessage.includes('quota');
+        errorMessage.includes('quota') ||
+        errorStatus === 429;
 
       if (isRateLimit) {
         throw new AppError(

@@ -497,26 +497,81 @@ async function runAiDomainTests() {
   }
 
   // ---------------------------------------------------------------------------
-  // Test 9: Gemini API Failure & Rate Limit Handling
+  // Test 9: Gemini API Failure, Rate Limit & Error Sanitization Handling
   // ---------------------------------------------------------------------------
   {
-    console.log('  9. Testing Gemini API rate limits and network failure handling...');
-    // Rate limit simulation
-    AiService.setGeminiProvider(
-      new MockGeminiProvider(async () => {
-        const rateLimitErr: any = new Error(
-          '429 Too Many Requests: [GoogleGenerativeAI Error]: RESOURCE_EXHAUSTED',
-        );
-        throw rateLimitErr;
-      }),
+    console.log(
+      '  9. Testing Gemini API rate limits, error sanitization, and network failure handling...',
     );
 
-    const ctxRateLimit = createMockExpressContext(`Bearer ${user1Token}`);
-    authenticate(ctxRateLimit.req, ctxRateLimit.res, ctxRateLimit.next);
-    await AiController.generateReport(ctxRateLimit.req, ctxRateLimit.res, ctxRateLimit.next);
-    const errRateLimit = ctxRateLimit.getError();
-    assert.ok(errRateLimit instanceof Error);
-    console.log('     ✓ Upstream Gemini errors handled safely without exposing internal details');
+    // Direct GeminiProvider unit test for rate limit handling
+    const mockProviderInstance = new GeminiProvider('fake-api-key');
+    (mockProviderInstance as any).genAI = {
+      getGenerativeModel: () => ({
+        generateContent: async () => {
+          throw new Error('429 Too Many Requests: [GoogleGenerativeAI Error]: RESOURCE_EXHAUSTED');
+        },
+      }),
+    };
+
+    let caughtRateLimit: any = null;
+    try {
+      await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
+    } catch (err: any) {
+      caughtRateLimit = err;
+    }
+    assert.ok(caughtRateLimit instanceof AppError);
+    assert.strictEqual(caughtRateLimit.statusCode, HttpStatusCode.TOO_MANY_REQUESTS);
+    assert.strictEqual(
+      caughtRateLimit.message.includes('rate limit exceeded or quota exhausted'),
+      true,
+      'Rate limit error must be properly identified and return 429',
+    );
+
+    // Direct GeminiProvider unit test for upstream failure with sensitive query key leak in error text
+    (mockProviderInstance as any).genAI = {
+      getGenerativeModel: () => ({
+        generateContent: async () => {
+          throw new Error(
+            'Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSySecretApiKey12345: [500 Internal Server Error] Backend failure',
+          );
+        },
+      }),
+    };
+
+    let caughtSanitized: any = null;
+    try {
+      await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
+    } catch (err: any) {
+      caughtSanitized = err;
+    }
+    assert.ok(caughtSanitized instanceof AppError);
+    assert.strictEqual(caughtSanitized.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
+    assert.strictEqual(
+      caughtSanitized.message.includes('AIzaSySecretApiKey12345'),
+      false,
+      'Sensitive API keys MUST never leak into error message returned to caller',
+    );
+    assert.strictEqual(
+      caughtSanitized.message,
+      'Gemini AI inference service encountered an error.',
+      'Safe generic message must be returned to client',
+    );
+
+    // Test controller error forwarding
+    AiService.setGeminiProvider(mockProviderInstance);
+    const ctxSanitized = createMockExpressContext(`Bearer ${user1Token}`);
+    authenticate(ctxSanitized.req, ctxSanitized.res, ctxSanitized.next);
+    await AiController.generateReport(ctxSanitized.req, ctxSanitized.res, ctxSanitized.next);
+    const errFromController = ctxSanitized.getError();
+    assert.ok(errFromController instanceof AppError);
+    assert.strictEqual(errFromController.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
+    assert.strictEqual(
+      errFromController.message,
+      'Gemini AI inference service encountered an error.',
+    );
+
+    console.log('     ✓ Upstream Gemini errors handled safely with complete secret sanitization');
   }
 
   // ---------------------------------------------------------------------------
