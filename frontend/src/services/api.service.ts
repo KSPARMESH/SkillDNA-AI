@@ -54,3 +54,20 @@ export async function logoutApi(): Promise<{ success: boolean; message?: string 
     clearAuthTokens();
   }
 }
+
+/**
+ * Fetches authenticated user profile from GET /api/v1/users/me
+ */
+export async function getProfileApi() {
+  return fetchApi('/users/me', { method: 'GET' });
+}
+
+/**
+ * Updates authenticated user profile via PUT /api/v1/users/me
+ */
+export async function updateProfileApi(data: Record<string, any>) {
+  return fetchApi('/users/me', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
