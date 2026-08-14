@@ -114,3 +114,71 @@ export async function deleteProjectApi(id: string) {
     method: 'DELETE',
   });
 }
+
+/**
+ * Fetches list of all supported integration platforms from GET /api/v1/integrations/platforms
+ */
+export async function getSupportedPlatformsApi() {
+  return fetchApi('/integrations/platforms', { method: 'GET' });
+}
+
+/**
+ * Fetches all platform integrations for the authenticated user from GET /api/v1/integrations
+ */
+export async function getIntegrationsApi() {
+  return fetchApi('/integrations', { method: 'GET' });
+}
+
+/**
+ * Fetches integration status summary from GET /api/v1/integrations/status
+ */
+export async function getIntegrationStatusApi() {
+  return fetchApi('/integrations/status', { method: 'GET' });
+}
+
+/**
+ * Connects a platform integration via POST /api/v1/integrations/connect
+ */
+export async function connectPlatformApi(data: {
+  platform: string;
+  username: string;
+  accessToken?: string;
+  refreshToken?: string;
+  metadata?: Record<string, any>;
+}) {
+  return fetchApi('/integrations/connect', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Disconnects a platform integration via POST /api/v1/integrations/disconnect
+ */
+export async function disconnectPlatformApi(platform: string) {
+  return fetchApi('/integrations/disconnect', {
+    method: 'POST',
+    body: JSON.stringify({ platform }),
+  });
+}
+
+/**
+ * Triggers platform sync via POST /api/v1/integrations/sync or /api/v1/integrations/sync/:platform
+ */
+export async function syncPlatformApi(
+  platform?: string,
+  options?: { mode?: 'FULL' | 'INCREMENTAL'; force?: boolean },
+) {
+  const endpoint = platform ? `/integrations/sync/${platform}` : '/integrations/sync';
+  return fetchApi(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(options || {}),
+  });
+}
+
+/**
+ * Fetches synchronization history logs from GET /api/v1/integrations/sync/history
+ */
+export async function getSyncHistoryApi() {
+  return fetchApi('/integrations/sync/history', { method: 'GET' });
+}

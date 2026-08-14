@@ -75,6 +75,17 @@ function runProtectedRoutesTests() {
     '     ✓ Unauthenticated access to /recruitment correctly blocked & redirected to /login',
   );
 
+  // Test 5b: Unauthenticated access to /integrations
+  console.log('  5b. Testing unauthenticated access to /integrations...');
+  const isIntegrationsAccessGrantedUnauth = isTokenValid(null);
+  console.assert(
+    isIntegrationsAccessGrantedUnauth === false,
+    '❌ Failed: Unauthenticated user should NOT be granted access to /integrations',
+  );
+  console.log(
+    '     ✓ Unauthenticated access to /integrations correctly blocked & redirected to /login',
+  );
+
   // Test 6: Expired access token handling
   console.log('  6. Testing access with an expired access token...');
   const expiredToken = createMockJwt(-300); // expired 5 minutes ago
@@ -94,7 +105,14 @@ function runProtectedRoutesTests() {
   // Execute logout cleanup
   currentToken = null;
 
-  const routes = ['/dashboard', '/profile', '/ai-workspace', '/recruitment', '/wrapped'];
+  const routes = [
+    '/dashboard',
+    '/profile',
+    '/integrations',
+    '/ai-workspace',
+    '/recruitment',
+    '/wrapped',
+  ];
   for (const route of routes) {
     const isGranted = isTokenValid(currentToken);
     console.assert(
@@ -103,7 +121,7 @@ function runProtectedRoutesTests() {
     );
   }
   console.log(
-    '     ✓ All protected routes (/dashboard, /profile, /ai-workspace, /recruitment, /wrapped) securely reject access post-logout',
+    '     ✓ All protected routes (/dashboard, /profile, /integrations, /ai-workspace, /recruitment, /wrapped) securely reject access post-logout',
   );
 
   console.log('✅ All Protected Routes Authentication Tests Passed Successfully.');

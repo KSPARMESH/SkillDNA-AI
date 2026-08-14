@@ -69,6 +69,9 @@ export function Header() {
         <Link href="/profile" className="hover:text-emerald-400 transition-colors">
           Profile
         </Link>
+        <Link href="/integrations" className="hover:text-emerald-400 transition-colors">
+          Integrations
+        </Link>
         <Link href="/ai-workspace" className="hover:text-emerald-400 transition-colors">
           AI Workspace
         </Link>
