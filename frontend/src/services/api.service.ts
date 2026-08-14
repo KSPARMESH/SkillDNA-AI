@@ -71,3 +71,46 @@ export async function updateProfileApi(data: Record<string, any>) {
     body: JSON.stringify(data),
   });
 }
+
+/**
+ * Fetches all projects for the authenticated user from GET /api/v1/projects
+ */
+export async function getProjectsApi() {
+  return fetchApi('/projects', { method: 'GET' });
+}
+
+/**
+ * Fetches a single project by ID from GET /api/v1/projects/:id
+ */
+export async function getProjectByIdApi(id: string) {
+  return fetchApi(`/projects/${id}`, { method: 'GET' });
+}
+
+/**
+ * Creates a new project via POST /api/v1/projects
+ */
+export async function createProjectApi(data: Record<string, any>) {
+  return fetchApi('/projects', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Updates an existing project via PUT /api/v1/projects/:id
+ */
+export async function updateProjectApi(id: string, data: Record<string, any>) {
+  return fetchApi(`/projects/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Deletes a project via DELETE /api/v1/projects/:id
+ */
+export async function deleteProjectApi(id: string) {
+  return fetchApi(`/projects/${id}`, {
+    method: 'DELETE',
+  });
+}
