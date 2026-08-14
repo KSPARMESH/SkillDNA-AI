@@ -1,4 +1,10 @@
-import { AppError, HttpStatusCode, ApiErrorCode, PlatformType } from '@skilldna/shared';
+import {
+  AppError,
+  HttpStatusCode,
+  ApiErrorCode,
+  PlatformType,
+  normalizePlatformType,
+} from '@skilldna/shared';
 import { ConnectPlatformDto } from '../dto/connect-platform.dto';
 import { DisconnectPlatformDto } from '../dto/disconnect-platform.dto';
 import { SyncRequestDto } from '../dto/sync-request.dto';
@@ -14,8 +20,12 @@ export function validateConnectPlatform(data: any): ConnectPlatformDto {
   }
 
   const { platform, username, accessToken, refreshToken, metadata } = data;
+  const normalizedPlatform = normalizePlatformType(platform);
 
-  if (!platform || !INTEGRATION_CONSTANTS.SUPPORTED_PLATFORMS.includes(platform as PlatformType)) {
+  if (
+    !normalizedPlatform ||
+    !INTEGRATION_CONSTANTS.SUPPORTED_PLATFORMS.includes(normalizedPlatform)
+  ) {
     throw new AppError(
       `Invalid or unsupported platform '${platform}'. Supported platforms: ${INTEGRATION_CONSTANTS.SUPPORTED_PLATFORMS.join(', ')}`,
       HttpStatusCode.BAD_REQUEST,
@@ -32,7 +42,7 @@ export function validateConnectPlatform(data: any): ConnectPlatformDto {
   }
 
   return {
-    platform: platform as PlatformType,
+    platform: normalizedPlatform,
     username: username.trim(),
     accessToken: accessToken && typeof accessToken === 'string' ? accessToken.trim() : undefined,
     refreshToken:
@@ -51,8 +61,12 @@ export function validateDisconnectPlatform(data: any): DisconnectPlatformDto {
   }
 
   const { platform } = data;
+  const normalizedPlatform = normalizePlatformType(platform);
 
-  if (!platform || !INTEGRATION_CONSTANTS.SUPPORTED_PLATFORMS.includes(platform as PlatformType)) {
+  if (
+    !normalizedPlatform ||
+    !INTEGRATION_CONSTANTS.SUPPORTED_PLATFORMS.includes(normalizedPlatform)
+  ) {
     throw new AppError(
       `Invalid or unsupported platform '${platform}'.`,
       HttpStatusCode.BAD_REQUEST,
@@ -61,7 +75,7 @@ export function validateDisconnectPlatform(data: any): DisconnectPlatformDto {
   }
 
   return {
-    platform: platform as PlatformType,
+    platform: normalizedPlatform,
   };
 }
 
@@ -71,8 +85,12 @@ export function validateSyncRequest(data: any): SyncRequestDto {
   }
 
   const { platform, mode, force } = data;
+  const normalizedPlatform = platform ? normalizePlatformType(platform) : undefined;
 
-  if (platform && !INTEGRATION_CONSTANTS.SUPPORTED_PLATFORMS.includes(platform as PlatformType)) {
+  if (
+    platform &&
+    (!normalizedPlatform || !INTEGRATION_CONSTANTS.SUPPORTED_PLATFORMS.includes(normalizedPlatform))
+  ) {
     throw new AppError(
       `Invalid platform '${platform}'.`,
       HttpStatusCode.BAD_REQUEST,
@@ -87,7 +105,7 @@ export function validateSyncRequest(data: any): SyncRequestDto {
       : 'INCREMENTAL';
 
   return {
-    platform: platform ? (platform as PlatformType) : undefined,
+    platform: normalizedPlatform || undefined,
     mode: syncMode,
     force: Boolean(force),
   };

@@ -2,7 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../../../middleware/auth.middleware';
 import { validateSyncRequest } from '../validators/integration.validator';
 import { SyncService } from '../services/sync.service';
-import { PlatformType } from '@skilldna/shared';
+import { PlatformType, normalizePlatformType } from '@skilldna/shared';
 
 export class SyncController {
   static async sync(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -15,7 +15,7 @@ export class SyncController {
       const payload = validateSyncRequest(req.body);
 
       const targetPlatform = platformParam
-        ? (platformParam.toUpperCase() as PlatformType)
+        ? normalizePlatformType(platformParam) || (platformParam.toUpperCase() as PlatformType)
         : payload.platform;
 
       if (targetPlatform) {

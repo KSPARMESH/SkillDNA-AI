@@ -1,16 +1,17 @@
 import { prisma } from '@skilldna/database';
-import { PlatformType } from '@skilldna/shared';
+import { PlatformType, normalizePlatformType } from '@skilldna/shared';
 import { encryptPayload, decryptPayload } from '../../../utils/crypto.util';
 
 export class IntegrationRepository {
   static async upsertIntegration(data: {
     userId: string;
-    platform: PlatformType;
+    platform: PlatformType | string;
     username: string;
     accessToken?: string;
     refreshToken?: string;
     metadata?: Record<string, any>;
   }) {
+    const validPlatform = (normalizePlatformType(data.platform) || data.platform) as PlatformType;
     let encryptedAccess: string | undefined = undefined;
     let encryptedRefresh: string | undefined = undefined;
 
@@ -28,12 +29,12 @@ export class IntegrationRepository {
       where: {
         userId_platform: {
           userId: data.userId,
-          platform: data.platform,
+          platform: validPlatform,
         },
       },
       create: {
         userId: data.userId,
-        platform: data.platform,
+        platform: validPlatform,
         username: data.username,
         accessToken: encryptedAccess,
         refreshToken: encryptedRefresh,
@@ -52,12 +53,13 @@ export class IntegrationRepository {
     });
   }
 
-  static async findByUserIdAndPlatform(userId: string, platform: PlatformType) {
+  static async findByUserIdAndPlatform(userId: string, platform: PlatformType | string) {
+    const validPlatform = (normalizePlatformType(platform) || platform) as PlatformType;
     const integration = await prisma.platformIntegration.findUnique({
       where: {
         userId_platform: {
           userId,
-          platform,
+          platform: validPlatform,
         },
       },
     });
@@ -74,9 +76,10 @@ export class IntegrationRepository {
     return list.map((item) => this.decryptTokens(item));
   }
 
-  static async disconnectIntegration(userId: string, platform: PlatformType) {
+  static async disconnectIntegration(userId: string, platform: PlatformType | string) {
+    const validPlatform = (normalizePlatformType(platform) || platform) as PlatformType;
     return prisma.platformIntegration.updateMany({
-      where: { userId, platform },
+      where: { userId, platform: validPlatform },
       data: {
         isConnected: false,
         accessToken: null,

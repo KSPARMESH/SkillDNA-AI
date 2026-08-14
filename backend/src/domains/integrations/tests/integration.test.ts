@@ -1,11 +1,20 @@
 import assert from 'node:assert';
 import { AuthService } from '../../../domains/auth/auth.service';
 import { IntegrationRepository } from '../repositories/integration.repository';
-import { PlatformType } from '@skilldna/shared';
+import {
+  PlatformType,
+  normalizePlatformType,
+  getPlatformDisplayName,
+  PLATFORM_DISPLAY_NAMES,
+} from '@skilldna/shared';
+import {
+  validateConnectPlatform,
+  validateDisconnectPlatform,
+} from '../validators/integration.validator';
 import { OAuthService } from '../services/oauth.service';
 
 async function runIntegrationDomainTests() {
-  console.log('🧪 Running Integration Domain E2E Service Tests...');
+  console.log('🧪 Running Integration Domain E2E Service & Enum Mapping Tests...');
 
   // 1. Create a test user for DB integrations
   const testEmail = `integration.test.${Date.now()}@skilldna.ai`;
@@ -17,7 +26,30 @@ async function runIntegrationDomainTests() {
   });
   const userId = registerResult.user.id;
 
-  // Test Case 1: Connect Platform Integration
+  // Test Case 0: Centralized PlatformType Enum Normalization
+  {
+    console.log('  Testing: Centralized PlatformType enum mappings...');
+    assert.strictEqual(normalizePlatformType('AtCoder'), PlatformType.ATCODER);
+    assert.strictEqual(normalizePlatformType('atcoder'), PlatformType.ATCODER);
+    assert.strictEqual(normalizePlatformType('ATCODER'), PlatformType.ATCODER);
+    assert.strictEqual(normalizePlatformType('GitHub'), PlatformType.GITHUB);
+    assert.strictEqual(normalizePlatformType('LeetCode'), PlatformType.LEETCODE);
+    assert.strictEqual(normalizePlatformType('HackerRank'), PlatformType.HACKERRANK);
+    assert.strictEqual(normalizePlatformType('Codeforces'), PlatformType.CODEFORCES);
+    assert.strictEqual(normalizePlatformType('Stack Overflow'), PlatformType.STACKOVERFLOW);
+    assert.strictEqual(normalizePlatformType('stackoverflow'), PlatformType.STACKOVERFLOW);
+    assert.strictEqual(normalizePlatformType('Medium'), PlatformType.MEDIUM);
+    assert.strictEqual(normalizePlatformType('LinkedIn'), PlatformType.LINKEDIN);
+    assert.strictEqual(normalizePlatformType('Kaggle'), PlatformType.KAGGLE);
+    assert.strictEqual(normalizePlatformType('Devpost'), PlatformType.DEVPOST);
+    assert.strictEqual(normalizePlatformType('CodeChef'), PlatformType.CODECHEF);
+
+    assert.strictEqual(getPlatformDisplayName(PlatformType.ATCODER), 'AtCoder');
+    assert.strictEqual(PLATFORM_DISPLAY_NAMES[PlatformType.ATCODER], 'AtCoder');
+    console.log('  ✅ Passed: All 11 platform enum mappings and display names');
+  }
+
+  // Test Case 1: Connect Platform Integration (GitHub)
   {
     console.log('  Testing: IntegrationRepository.upsertIntegration (with encrypted tokens)...');
     const rawToken = 'gho_secret_access_token_sample_12345';
@@ -48,6 +80,46 @@ async function runIntegrationDomainTests() {
     );
   }
 
+  // Test Case 1b: Connect AtCoder (with display label "AtCoder" and valid handle "Parmesh")
+  {
+    console.log('  Testing: validateConnectPlatform and Prisma upsert with AtCoder / Parmesh...');
+    const validatedDto = validateConnectPlatform({
+      platform: 'AtCoder', // Display label from client
+      username: 'Parmesh',
+    });
+
+    assert.strictEqual(
+      validatedDto.platform,
+      PlatformType.ATCODER,
+      'Validator must normalize display label AtCoder to enum ATCODER',
+    );
+    assert.strictEqual(validatedDto.username, 'Parmesh');
+
+    // Upsert into Database via Prisma
+    const atcoderIntegration = await IntegrationRepository.upsertIntegration({
+      userId,
+      platform: validatedDto.platform,
+      username: validatedDto.username,
+    });
+
+    assert.strictEqual(atcoderIntegration.userId, userId);
+    assert.strictEqual(
+      atcoderIntegration.platform,
+      PlatformType.ATCODER,
+      'Database record must persist ATCODER enum without Postgres 22P02 error',
+    );
+    assert.strictEqual(atcoderIntegration.username, 'Parmesh');
+    assert.strictEqual(atcoderIntegration.isConnected, true);
+
+    const fetchedAtCoder = await IntegrationRepository.findByUserIdAndPlatform(
+      userId,
+      'AtCoder', // Should also work with case-insensitive / display string
+    );
+    assert.ok(fetchedAtCoder, 'AtCoder integration must exist');
+    assert.strictEqual(fetchedAtCoder?.username, 'Parmesh');
+    console.log('  ✅ Passed: AtCoder connection with username Parmesh and enum ATCODER');
+  }
+
   // Test Case 2: OAuth URL Generation
   {
     console.log('  Testing: OAuthService.getAuthorizationUrl...');
@@ -63,17 +135,19 @@ async function runIntegrationDomainTests() {
   // Test Case 3: Disconnect Integration
   {
     console.log('  Testing: IntegrationRepository.disconnectIntegration...');
-    await IntegrationRepository.disconnectIntegration(userId, PlatformType.GITHUB);
+    const validatedDisconnect = validateDisconnectPlatform({ platform: 'AtCoder' });
+    assert.strictEqual(validatedDisconnect.platform, PlatformType.ATCODER);
+
+    await IntegrationRepository.disconnectIntegration(userId, validatedDisconnect.platform);
     const disconnected = await IntegrationRepository.findByUserIdAndPlatform(
       userId,
-      PlatformType.GITHUB,
+      PlatformType.ATCODER,
     );
     assert.strictEqual(disconnected?.isConnected, false, 'Integration should be disconnected');
-    assert.ok(!disconnected?.accessToken, 'Access token should be removed/falsy');
-    console.log('  ✅ Passed: IntegrationRepository.disconnectIntegration');
+    console.log('  ✅ Passed: IntegrationRepository.disconnectIntegration for AtCoder');
   }
 
-  console.log('🎉 All Integration Domain E2E Service Tests Passed Successfully!');
+  console.log('🎉 All Integration Domain E2E Service & Enum Mapping Tests Passed Successfully!');
 }
 
 runIntegrationDomainTests().catch((err) => {

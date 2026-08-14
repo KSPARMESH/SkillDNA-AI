@@ -3,6 +3,12 @@
 import { useState, useEffect, useMemo, FormEvent } from 'react';
 import { ProtectedRoute } from '@/components/common/ProtectedRoute';
 import {
+  PlatformType,
+  normalizePlatformType,
+  getPlatformDisplayName,
+  PLATFORM_DISPLAY_NAMES,
+} from '@skilldna/shared';
+import {
   getSupportedPlatformsApi,
   getIntegrationsApi,
   connectPlatformApi,
@@ -16,7 +22,9 @@ export interface IntegrationData {
   username: string;
   isConnected: boolean;
   lastSyncedAt?: string | null;
-  syncStatus?: 'SUCCESS' | 'SYNCING' | 'PENDING' | 'FAILED' | 'IDLE' | string;
+  syncStatus?:
+    'SUCCESS' | 'SYNCING' | 'PENDING' | 'FAILED' | 'SYNC_FAILED' | 'RATE_LIMITED' | 'IDLE' | string;
+  lastError?: string | null;
   metadata?: Record<string, any> | null;
   createdAt?: string;
   updatedAt?: string;
@@ -32,23 +40,11 @@ export interface PlatformMetadataConfig {
   docsUrl?: string;
 }
 
-const DEFAULT_SUPPORTED_PLATFORMS = [
-  'GITHUB',
-  'LEETCODE',
-  'CODEFORCES',
-  'HACKERRANK',
-  'STACKOVERFLOW',
-  'ATCODER',
-  'MEDIUM',
-  'KAGGLE',
-  'LINKEDIN',
-  'DEVPOST',
-  'CODECHEF',
-];
+const DEFAULT_SUPPORTED_PLATFORMS: string[] = Object.values(PlatformType);
 
 const PLATFORM_CONFIGS: Record<string, PlatformMetadataConfig> = {
   GITHUB: {
-    name: 'GitHub',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.GITHUB] || 'GitHub',
     category: 'REPOSITORY',
     description: 'Sync public repositories, commits, star counts, pull requests, and languages.',
     usernamePlaceholder: 'e.g. torvalds',
@@ -56,7 +52,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformMetadataConfig> = {
     accentColor: '#f0f6fc',
   },
   LEETCODE: {
-    name: 'LeetCode',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.LEETCODE] || 'LeetCode',
     category: 'CODING',
     description:
       'Sync algorithmic problem solving breakdown (Easy, Medium, Hard) and contest rating.',
@@ -65,7 +61,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformMetadataConfig> = {
     accentColor: '#ffa116',
   },
   CODEFORCES: {
-    name: 'Codeforces',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.CODEFORCES] || 'Codeforces',
     category: 'CODING',
     description: 'Sync competitive programming rank, max rating, contribution score, and contests.',
     usernamePlaceholder: 'e.g. tourist',
@@ -73,7 +69,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformMetadataConfig> = {
     accentColor: '#318ce7',
   },
   HACKERRANK: {
-    name: 'HackerRank',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.HACKERRANK] || 'HackerRank',
     category: 'CODING',
     description: 'Sync domain skill badges, verified assessments, stars, and problem submissions.',
     usernamePlaceholder: 'e.g. hacker_user',
@@ -81,7 +77,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformMetadataConfig> = {
     accentColor: '#00ea64',
   },
   STACKOVERFLOW: {
-    name: 'Stack Overflow',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.STACKOVERFLOW] || 'Stack Overflow',
     category: 'COMMUNITY',
     description: 'Sync reputation score, top answer tags, bronze/silver/gold badges, and impact.',
     usernamePlaceholder: 'e.g. 22656 or username',
@@ -89,15 +85,15 @@ const PLATFORM_CONFIGS: Record<string, PlatformMetadataConfig> = {
     accentColor: '#f48024',
   },
   ATCODER: {
-    name: 'AtCoder',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.ATCODER] || 'AtCoder',
     category: 'CODING',
     description: 'Sync algorithmic contest performance, current rating, and highest rank achieved.',
-    usernamePlaceholder: 'e.g. chokudai',
+    usernamePlaceholder: 'e.g. chokudai or Parmesh',
     profileUrlPrefix: 'https://atcoder.jp/users/',
     accentColor: '#22c55e',
   },
   MEDIUM: {
-    name: 'Medium',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.MEDIUM] || 'Medium',
     category: 'COMMUNITY',
     description: 'Sync published technical articles, engineering write-ups, claps, and readership.',
     usernamePlaceholder: 'e.g. @parmeshks',
@@ -105,7 +101,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformMetadataConfig> = {
     accentColor: '#ffffff',
   },
   KAGGLE: {
-    name: 'Kaggle',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.KAGGLE] || 'Kaggle',
     category: 'CODING',
     description: 'Sync data science tier, competition medals, datasets, and notebook upvotes.',
     usernamePlaceholder: 'e.g. kaggle_expert',
@@ -113,7 +109,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformMetadataConfig> = {
     accentColor: '#20beff',
   },
   LINKEDIN: {
-    name: 'LinkedIn',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.LINKEDIN] || 'LinkedIn',
     category: 'COMMUNITY',
     description: 'Sync professional engineering trajectory, credentials, and career headline.',
     usernamePlaceholder: 'e.g. parmesh-ks',
@@ -121,7 +117,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformMetadataConfig> = {
     accentColor: '#0a66c2',
   },
   DEVPOST: {
-    name: 'Devpost',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.DEVPOST] || 'Devpost',
     category: 'REPOSITORY',
     description: 'Sync hackathon project submissions, winner awards, and collaborative builds.',
     usernamePlaceholder: 'e.g. devpost_builder',
@@ -129,7 +125,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformMetadataConfig> = {
     accentColor: '#003e54',
   },
   CODECHEF: {
-    name: 'CodeChef',
+    name: PLATFORM_DISPLAY_NAMES[PlatformType.CODECHEF] || 'CodeChef',
     category: 'CODING',
     description: 'Sync competitive star ratings, division rank, and problem solving history.',
     usernamePlaceholder: 'e.g. chef_coder',
@@ -146,6 +142,7 @@ function formatTimestamp(isoString?: string | null): string {
     const now = new Date();
     const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
+    if (diffSeconds < 0) return 'Just now';
     if (diffSeconds < 60) return 'Just now';
     if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
     if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
@@ -161,6 +158,22 @@ function formatTimestamp(isoString?: string | null): string {
   }
 }
 
+function sanitizeErrorMessage(error?: string | null): string | null {
+  if (!error) return null;
+  // If error contains token/key patterns or stack traces, filter them
+  if (
+    error.includes('Bearer') ||
+    error.includes('accessToken') ||
+    error.includes('refreshToken') ||
+    error.includes('password') ||
+    error.includes('at Object.') ||
+    error.includes('node_modules')
+  ) {
+    return 'Synchronization could not be completed with the platform provider. Please verify your handle.';
+  }
+  return error.replace(/\s+/g, ' ').trim();
+}
+
 function PlatformIcon({
   platform,
   className = 'w-6 h-6',
@@ -168,9 +181,9 @@ function PlatformIcon({
   platform: string;
   className?: string;
 }) {
-  const p = platform.toUpperCase();
+  const norm = normalizePlatformType(platform) || platform.toUpperCase();
 
-  switch (p) {
+  switch (norm) {
     case 'GITHUB':
       return (
         <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -285,12 +298,11 @@ export default function IntegrationsPage() {
   const [syncingMap, setSyncingMap] = useState<Record<string, boolean>>({});
   const [isSyncingAll, setIsSyncingAll] = useState<boolean>(false);
 
-  // Fetch initial data
+  // Fetch initial data directly from backend (Source of Truth)
   const fetchData = async () => {
     setIsLoading(true);
     setFetchError(null);
     try {
-      // Fetch supported platforms (public) and user integrations in parallel
       const [platformsRes, integrationsRes] = await Promise.allSettled([
         getSupportedPlatformsApi(),
         getIntegrationsApi(),
@@ -301,7 +313,11 @@ export default function IntegrationsPage() {
         platformsRes.value?.success &&
         Array.isArray(platformsRes.value.data?.supportedPlatforms)
       ) {
-        setSupportedPlatforms(platformsRes.value.data.supportedPlatforms);
+        // Normalize platform keys to exact enum values
+        const normalized = platformsRes.value.data.supportedPlatforms.map(
+          (p: string) => normalizePlatformType(p) || p.toUpperCase(),
+        );
+        setSupportedPlatforms(normalized);
       }
 
       if (integrationsRes.status === 'fulfilled') {
@@ -325,12 +341,13 @@ export default function IntegrationsPage() {
     fetchData();
   }, []);
 
-  // Map of connected integrations keyed by uppercase platform name
+  // Map of connected integrations keyed by normalized uppercase platform name
   const connectedMap = useMemo(() => {
     const map = new Map<string, IntegrationData>();
     integrations.forEach((item) => {
       if (item && item.platform && item.isConnected) {
-        map.set(item.platform.toUpperCase(), item);
+        const key = (normalizePlatformType(item.platform) || item.platform).toUpperCase();
+        map.set(key, item);
       }
     });
     return map;
@@ -339,15 +356,25 @@ export default function IntegrationsPage() {
   // Combined full list of all available platforms with integration status
   const platformList = useMemo(() => {
     return supportedPlatforms.map((platformKey) => {
-      const key = platformKey.toUpperCase();
+      const key = (normalizePlatformType(platformKey) || platformKey).toUpperCase();
       const config = PLATFORM_CONFIGS[key] || {
-        name: platformKey,
+        name: getPlatformDisplayName(key),
         category: 'CODING',
-        description: `Connect and synchronize your technical footprint from ${platformKey}.`,
-        usernamePlaceholder: `e.g. ${platformKey.toLowerCase()}_user`,
+        description: `Connect and synchronize your technical footprint from ${getPlatformDisplayName(key)}.`,
+        usernamePlaceholder: `e.g. ${key.toLowerCase()}_user`,
         accentColor: '#38bdf8',
       };
       const activeIntegration = connectedMap.get(key);
+      const rawStatus = (activeIntegration?.syncStatus || 'IDLE').toUpperCase();
+      const normalizedStatus = rawStatus === 'SYNC_FAILED' ? 'FAILED' : rawStatus;
+      const isSyncingThis = Boolean(syncingMap[key]);
+
+      const lastError =
+        activeIntegration?.lastError ||
+        activeIntegration?.metadata?.lastError ||
+        (normalizedStatus === 'FAILED' || normalizedStatus === 'RATE_LIMITED'
+          ? activeIntegration?.metadata?.error || null
+          : null);
 
       return {
         key,
@@ -360,12 +387,13 @@ export default function IntegrationsPage() {
         isConnected: Boolean(activeIntegration && activeIntegration.isConnected),
         username: activeIntegration?.username || null,
         lastSyncedAt: activeIntegration?.lastSyncedAt || null,
-        syncStatus: activeIntegration?.syncStatus || 'IDLE',
+        syncStatus: isSyncingThis ? 'SYNCING' : normalizedStatus,
+        lastError: lastError ? String(lastError) : null,
         metadata: activeIntegration?.metadata || null,
         integrationId: activeIntegration?.id || null,
       };
     });
-  }, [supportedPlatforms, connectedMap]);
+  }, [supportedPlatforms, connectedMap, syncingMap]);
 
   // Filtered platform list based on search and category tab
   const filteredPlatforms = useMemo(() => {
@@ -409,9 +437,10 @@ export default function IntegrationsPage() {
   // CONNECT MODAL HANDLERS
   // =========================================================================
   const handleOpenConnectModal = (preselectedPlatform?: string) => {
-    const platformToPick = preselectedPlatform
-      ? preselectedPlatform.toUpperCase()
-      : supportedPlatforms[0] || 'GITHUB';
+    const normalized = preselectedPlatform
+      ? normalizePlatformType(preselectedPlatform) || preselectedPlatform.toUpperCase()
+      : null;
+    const platformToPick = normalized || supportedPlatforms[0] || 'GITHUB';
     setSelectedPlatform(platformToPick);
     setUsernameInput('');
     setConnectValidationError(null);
@@ -432,9 +461,10 @@ export default function IntegrationsPage() {
     setConnectApiError(null);
 
     const trimmedUsername = usernameInput.trim();
+    const normalizedPlatform = normalizePlatformType(selectedPlatform);
 
     // Client-side validation
-    if (!selectedPlatform || !supportedPlatforms.includes(selectedPlatform.toUpperCase())) {
+    if (!normalizedPlatform) {
       setConnectValidationError('Please select a valid supported platform.');
       return;
     }
@@ -452,35 +482,89 @@ export default function IntegrationsPage() {
     setIsConnecting(true);
     try {
       const response = await connectPlatformApi({
-        platform: selectedPlatform.toUpperCase(),
+        platform: normalizedPlatform,
         username: trimmedUsername,
       });
 
       if (response && response.success) {
-        // Update local state immediately
-        const newIntegration: IntegrationData = response.data || {
-          platform: selectedPlatform.toUpperCase(),
+        // Backend returns connect payload with isConnected: true
+        const connectData = response.data;
+        const initialStatus = (connectData?.syncStatus || 'SYNCING').toUpperCase();
+        const initialLastSynced = connectData?.lastSyncedAt || null;
+
+        const newIntegration: IntegrationData = {
+          id: connectData?.id,
+          platform: normalizedPlatform,
           username: trimmedUsername,
           isConnected: true,
-          syncStatus: 'SYNCING',
-          lastSyncedAt: new Date().toISOString(),
+          syncStatus: initialStatus,
+          lastSyncedAt: initialLastSynced,
+          metadata: connectData?.metadata || null,
         };
 
         setIntegrations((prev) => {
           const filtered = prev.filter(
-            (i) => i.platform.toUpperCase() !== selectedPlatform.toUpperCase(),
+            (i) =>
+              (normalizePlatformType(i.platform) || i.platform.toUpperCase()) !==
+              normalizedPlatform,
           );
           return [newIntegration, ...filtered];
         });
 
+        // If backend returns SYNCING or PENDING, track in syncingMap
+        if (initialStatus === 'SYNCING' || initialStatus === 'PENDING') {
+          setSyncingMap((prev) => ({ ...prev, [normalizedPlatform]: true }));
+        }
+
         setSuccessMessage(
-          `Successfully connected ${PLATFORM_CONFIGS[selectedPlatform]?.name || selectedPlatform} (@${trimmedUsername})! Synchronization initiated.`,
+          `Successfully connected ${PLATFORM_CONFIGS[normalizedPlatform]?.name || getPlatformDisplayName(normalizedPlatform)} (@${trimmedUsername})! Initial synchronization initiated.`,
         );
         handleCloseConnectModal();
+
+        // Refresh / re-fetch backend status after connection to capture the definitive synchronization result
+        const pollBackendStatus = async () => {
+          try {
+            const freshIntegrations = await getIntegrationsApi();
+            if (
+              freshIntegrations &&
+              freshIntegrations.success &&
+              Array.isArray(freshIntegrations.data)
+            ) {
+              setIntegrations(freshIntegrations.data);
+              const target = freshIntegrations.data.find(
+                (i: any) =>
+                  (normalizePlatformType(i.platform) || i.platform.toUpperCase()) ===
+                  normalizedPlatform,
+              );
+              if (target && target.syncStatus !== 'SYNCING' && target.syncStatus !== 'PENDING') {
+                setSyncingMap((prev) => ({ ...prev, [normalizedPlatform]: false }));
+                return true;
+              }
+            }
+          } catch {
+            // Safe fallback
+          }
+          return false;
+        };
+
+        setTimeout(async () => {
+          const finished = await pollBackendStatus();
+          if (!finished) {
+            setTimeout(async () => {
+              const finished2 = await pollBackendStatus();
+              if (!finished2) {
+                setTimeout(async () => {
+                  await pollBackendStatus();
+                  setSyncingMap((prev) => ({ ...prev, [normalizedPlatform]: false }));
+                }, 3000);
+              }
+            }, 2000);
+          }
+        }, 1200);
       } else {
         setConnectApiError(
           response?.message ||
-            `Failed to connect to ${PLATFORM_CONFIGS[selectedPlatform]?.name || selectedPlatform}. Please verify your username and try again.`,
+            `Failed to connect to ${PLATFORM_CONFIGS[normalizedPlatform]?.name || getPlatformDisplayName(normalizedPlatform)}. Please verify your username and try again.`,
         );
       }
     } catch (err: any) {
@@ -497,7 +581,8 @@ export default function IntegrationsPage() {
   // DISCONNECT MODAL HANDLERS
   // =========================================================================
   const handleOpenDisconnectModal = (platform: string, username?: string | null) => {
-    setPlatformToDisconnect({ platform, username: username || undefined });
+    const norm = normalizePlatformType(platform) || platform.toUpperCase();
+    setPlatformToDisconnect({ platform: norm, username: username || undefined });
     setDisconnectApiError(null);
     setIsDisconnectModalOpen(true);
   };
@@ -511,7 +596,9 @@ export default function IntegrationsPage() {
   const handleConfirmDisconnect = async () => {
     if (!platformToDisconnect) return;
 
-    const platformKey = platformToDisconnect.platform.toUpperCase();
+    const platformKey = (
+      normalizePlatformType(platformToDisconnect.platform) || platformToDisconnect.platform
+    ).toUpperCase();
     setIsDisconnecting(true);
     setDisconnectApiError(null);
 
@@ -520,14 +607,21 @@ export default function IntegrationsPage() {
 
       if (response && response.success) {
         // Immediate state update: remove platform or mark disconnected
-        setIntegrations((prev) => prev.filter((i) => i.platform.toUpperCase() !== platformKey));
+        setIntegrations((prev) =>
+          prev.filter(
+            (i) => (normalizePlatformType(i.platform) || i.platform.toUpperCase()) !== platformKey,
+          ),
+        );
 
         setSuccessMessage(
-          `Successfully disconnected ${PLATFORM_CONFIGS[platformKey]?.name || platformKey}.`,
+          `Successfully disconnected ${PLATFORM_CONFIGS[platformKey]?.name || getPlatformDisplayName(platformKey)}.`,
         );
         handleCloseDisconnectModal();
       } else {
-        setDisconnectApiError(response?.message || `Failed to disconnect platform ${platformKey}.`);
+        setDisconnectApiError(
+          response?.message ||
+            `Failed to disconnect platform ${getPlatformDisplayName(platformKey)}.`,
+        );
       }
     } catch (err: any) {
       setDisconnectApiError(
@@ -542,40 +636,82 @@ export default function IntegrationsPage() {
   // SYNC HANDLERS
   // =========================================================================
   const handleSyncPlatform = async (platformKey: string) => {
-    const key = platformKey.toUpperCase();
+    const key = (normalizePlatformType(platformKey) || platformKey).toUpperCase();
     setSyncingMap((prev) => ({ ...prev, [key]: true }));
     setErrorMessage(null);
+
+    // Immediately set optimistic sync status to SYNCING in UI while waiting for backend result
+    setIntegrations((prev) =>
+      prev.map((item) =>
+        (normalizePlatformType(item.platform) || item.platform.toUpperCase()) === key
+          ? { ...item, syncStatus: 'SYNCING' }
+          : item,
+      ),
+    );
 
     try {
       const response = await syncPlatformApi(key, { mode: 'INCREMENTAL' });
 
-      if (response && response.success) {
-        const nowIso = new Date().toISOString();
+      if (response && response.success && response.data?.status === 'SUCCESS') {
+        const syncedAtIso = response.data.syncedAt
+          ? new Date(response.data.syncedAt).toISOString()
+          : new Date().toISOString();
+
         setIntegrations((prev) =>
           prev.map((item) =>
-            item.platform.toUpperCase() === key
-              ? { ...item, lastSyncedAt: nowIso, syncStatus: 'SUCCESS' }
+            (normalizePlatformType(item.platform) || item.platform.toUpperCase()) === key
+              ? {
+                  ...item,
+                  lastSyncedAt: syncedAtIso,
+                  syncStatus: 'SUCCESS',
+                  lastError: null,
+                  metadata: response.data?.data?.rawMetadata || item.metadata,
+                }
               : item,
           ),
         );
-        setSuccessMessage(`Synchronized ${PLATFORM_CONFIGS[key]?.name || key} data successfully!`);
+        setSuccessMessage(
+          `Synchronized ${PLATFORM_CONFIGS[key]?.name || getPlatformDisplayName(key)} data successfully!`,
+        );
       } else {
+        // Backend returned failure
+        const failureReason =
+          response?.data?.error ||
+          response?.message ||
+          `Failed to synchronize ${PLATFORM_CONFIGS[key]?.name || getPlatformDisplayName(key)}.`;
+
+        const failureStatus = response?.data?.status === 'RATE_LIMITED' ? 'RATE_LIMITED' : 'FAILED';
+
         setIntegrations((prev) =>
           prev.map((item) =>
-            item.platform.toUpperCase() === key ? { ...item, syncStatus: 'FAILED' } : item,
+            (normalizePlatformType(item.platform) || item.platform.toUpperCase()) === key
+              ? {
+                  ...item,
+                  syncStatus: failureStatus,
+                  lastError: failureReason,
+                  metadata: { ...(item.metadata || {}), lastError: failureReason },
+                }
+              : item,
           ),
         );
-        setErrorMessage(
-          response?.message || `Failed to sync ${PLATFORM_CONFIGS[key]?.name || key}.`,
-        );
+        setErrorMessage(failureReason);
       }
     } catch (err: any) {
+      const errMsg =
+        err?.message || `Network error occurred while syncing ${getPlatformDisplayName(key)}.`;
       setIntegrations((prev) =>
         prev.map((item) =>
-          item.platform.toUpperCase() === key ? { ...item, syncStatus: 'FAILED' } : item,
+          (normalizePlatformType(item.platform) || item.platform.toUpperCase()) === key
+            ? {
+                ...item,
+                syncStatus: 'FAILED',
+                lastError: errMsg,
+                metadata: { ...(item.metadata || {}), lastError: errMsg },
+              }
+            : item,
         ),
       );
-      setErrorMessage(err?.message || `Network error occurred while syncing ${key}.`);
+      setErrorMessage(errMsg);
     } finally {
       setSyncingMap((prev) => ({ ...prev, [key]: false }));
     }
@@ -586,22 +722,38 @@ export default function IntegrationsPage() {
     setIsSyncingAll(true);
     setErrorMessage(null);
 
+    // Set all connected to SYNCING
+    setIntegrations((prev) =>
+      prev.map((item) => (item.isConnected ? { ...item, syncStatus: 'SYNCING' } : item)),
+    );
+
     try {
       const response = await syncPlatformApi(undefined, { mode: 'INCREMENTAL' });
 
       if (response && response.success) {
-        const nowIso = new Date().toISOString();
-        setIntegrations((prev) =>
-          prev.map((item) => ({ ...item, lastSyncedAt: nowIso, syncStatus: 'SUCCESS' })),
-        );
-        setSuccessMessage(
-          'Successfully triggered full synchronization across all connected platforms!',
-        );
+        // Re-fetch direct from backend to ensure accurate state
+        const freshData = await getIntegrationsApi();
+        if (freshData && freshData.success && Array.isArray(freshData.data)) {
+          setIntegrations(freshData.data);
+        }
+        setSuccessMessage('Synchronization request completed across all connected platforms.');
       } else {
         setErrorMessage(response?.message || 'Failed to complete full synchronization.');
+        const freshData = await getIntegrationsApi();
+        if (freshData && freshData.success && Array.isArray(freshData.data)) {
+          setIntegrations(freshData.data);
+        }
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'A network error occurred while syncing all platforms.');
+      try {
+        const freshData = await getIntegrationsApi();
+        if (freshData && freshData.success && Array.isArray(freshData.data)) {
+          setIntegrations(freshData.data);
+        }
+      } catch {
+        // Ignore
+      }
     } finally {
       setIsSyncingAll(false);
     }
@@ -609,34 +761,67 @@ export default function IntegrationsPage() {
 
   // Sync status pill component
   const renderSyncStatusBadge = (status?: string) => {
-    switch (status?.toUpperCase()) {
+    const s = (status || '').toUpperCase();
+    switch (s) {
       case 'SUCCESS':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/80 border border-emerald-800/80 text-emerald-400">
+          <span
+            id="sync-status-badge-success"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/80 border border-emerald-800/80 text-emerald-400"
+          >
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
             Synced
           </span>
         );
       case 'SYNCING':
-      case 'PENDING':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-sky-950/80 border border-sky-800/80 text-sky-400">
+          <span
+            id="sync-status-badge-syncing"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-sky-950/80 border border-sky-800/80 text-sky-400"
+          >
             <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping"></span>
             Syncing...
           </span>
         );
-      case 'FAILED':
+      case 'PENDING':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-950/80 border border-rose-800/80 text-rose-400">
+          <span
+            id="sync-status-badge-pending"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-950/80 border border-amber-800/80 text-amber-400"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+            Pending Sync
+          </span>
+        );
+      case 'FAILED':
+      case 'SYNC_FAILED':
+        return (
+          <span
+            id="sync-status-badge-failed"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-950/80 border border-rose-800/80 text-rose-400"
+          >
             <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
             Sync Failed
+          </span>
+        );
+      case 'RATE_LIMITED':
+        return (
+          <span
+            id="sync-status-badge-rate-limited"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-950/80 border border-amber-800/80 text-amber-400"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            Rate Limited
           </span>
         );
       case 'IDLE':
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-900 border border-slate-800 text-slate-400">
-            Idle
+          <span
+            id="sync-status-badge-idle"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-900 border border-slate-800 text-slate-400"
+          >
+            Not Synced
           </span>
         );
     }
@@ -1105,21 +1290,38 @@ export default function IntegrationsPage() {
                           {renderSyncStatusBadge(platform.syncStatus)}
                         </div>
 
-                        {/* Relevant Metadata if returned by backend */}
-                        {platform.metadata && Object.keys(platform.metadata).length > 0 && (
-                          <div className="pt-2 border-t border-slate-800/80 flex flex-wrap gap-1.5">
-                            {Object.entries(platform.metadata)
-                              .slice(0, 3)
-                              .map(([k, v]) => (
-                                <span
-                                  key={k}
-                                  className="px-2 py-0.5 bg-slate-950 border border-slate-800 text-slate-300 text-[10px] rounded font-mono"
-                                >
-                                  {k}: <strong className="text-slate-100">{String(v)}</strong>
-                                </span>
-                              ))}
+                        {/* Error info if sync failed */}
+                        {platform.lastError && (
+                          <div
+                            id={`platform-error-${platform.key.toLowerCase()}`}
+                            className="p-2 bg-rose-950/50 border border-rose-900/70 rounded-lg text-[11px] text-rose-300 flex items-start gap-1.5"
+                          >
+                            <span className="text-rose-400 font-bold leading-none mt-0.5">⚠️</span>
+                            <span className="leading-tight">
+                              {sanitizeErrorMessage(platform.lastError)}
+                            </span>
                           </div>
                         )}
+
+                        {/* Relevant Metadata if returned by backend */}
+                        {platform.metadata &&
+                          Object.keys(platform.metadata).filter(
+                            (k) => k !== 'lastError' && k !== 'failedAt',
+                          ).length > 0 && (
+                            <div className="pt-2 border-t border-slate-800/80 flex flex-wrap gap-1.5">
+                              {Object.entries(platform.metadata)
+                                .filter(([k]) => k !== 'lastError' && k !== 'failedAt')
+                                .slice(0, 3)
+                                .map(([k, v]) => (
+                                  <span
+                                    key={k}
+                                    className="px-2 py-0.5 bg-slate-950 border border-slate-800 text-slate-300 text-[10px] rounded font-mono"
+                                  >
+                                    {k}: <strong className="text-slate-100">{String(v)}</strong>
+                                  </span>
+                                ))}
+                            </div>
+                          )}
                       </div>
                     ) : (
                       <div className="p-3 bg-slate-900/40 border border-dashed border-slate-800 rounded-xl flex items-center justify-between text-xs text-slate-400">
@@ -1236,18 +1438,23 @@ export default function IntegrationsPage() {
                     id="connect-platform-select"
                     value={selectedPlatform}
                     onChange={(e) => {
-                      setSelectedPlatform(e.target.value);
+                      const val = (
+                        normalizePlatformType(e.target.value) || e.target.value
+                      ).toUpperCase();
+                      setSelectedPlatform(val);
                       setConnectValidationError(null);
                     }}
                     disabled={isConnecting}
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
                   >
                     {supportedPlatforms.map((plat) => {
-                      const cfg = PLATFORM_CONFIGS[plat.toUpperCase()];
-                      const isAlreadyConnected = Boolean(connectedMap.get(plat.toUpperCase()));
+                      const platKey = (normalizePlatformType(plat) || plat).toUpperCase();
+                      const cfg = PLATFORM_CONFIGS[platKey];
+                      const displayName = cfg ? cfg.name : getPlatformDisplayName(platKey);
+                      const isAlreadyConnected = Boolean(connectedMap.get(platKey));
                       return (
-                        <option key={plat} value={plat}>
-                          {cfg ? cfg.name : plat} {isAlreadyConnected ? '(Connected)' : ''}
+                        <option key={platKey} value={platKey}>
+                          {displayName} {isAlreadyConnected ? '(Connected)' : ''}
                         </option>
                       );
                     })}
@@ -1267,8 +1474,9 @@ export default function IntegrationsPage() {
                     id="connect-username-input"
                     type="text"
                     placeholder={
-                      PLATFORM_CONFIGS[selectedPlatform.toUpperCase()]?.usernamePlaceholder ||
-                      'e.g. username'
+                      PLATFORM_CONFIGS[
+                        (normalizePlatformType(selectedPlatform) || selectedPlatform).toUpperCase()
+                      ]?.usernamePlaceholder || 'e.g. username'
                     }
                     value={usernameInput}
                     onChange={(e) => {
@@ -1353,7 +1561,7 @@ export default function IntegrationsPage() {
                   <p className="text-xs text-slate-400">
                     Confirm disconnection for{' '}
                     {PLATFORM_CONFIGS[platformToDisconnect.platform]?.name ||
-                      platformToDisconnect.platform}
+                      getPlatformDisplayName(platformToDisconnect.platform)}
                   </p>
                 </div>
               </div>
@@ -1371,7 +1579,7 @@ export default function IntegrationsPage() {
                 Are you sure you want to disconnect{' '}
                 <strong className="text-emerald-400">
                   {PLATFORM_CONFIGS[platformToDisconnect.platform]?.name ||
-                    platformToDisconnect.platform}
+                    getPlatformDisplayName(platformToDisconnect.platform)}
                 </strong>
                 {platformToDisconnect.username && (
                   <span className="font-mono text-slate-200">
