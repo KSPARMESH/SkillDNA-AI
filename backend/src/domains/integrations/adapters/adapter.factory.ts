@@ -12,6 +12,7 @@ import { LinkedInAdapter } from './linkedin.adapter';
 import { DevpostAdapter } from './devpost.adapter';
 import { MediumAdapter } from './medium.adapter';
 import { StackOverflowAdapter } from './stackoverflow.adapter';
+import { CodeChefAdapter } from './codechef.adapter';
 
 export class PlatformAdapterFactory {
   private static adapters: Map<string, IPlatformAdapter> = new Map();
@@ -30,6 +31,7 @@ export class PlatformAdapterFactory {
     this.registerAdapter(new DevpostAdapter());
     this.registerAdapter(new MediumAdapter());
     this.registerAdapter(new StackOverflowAdapter());
+    this.registerAdapter(new CodeChefAdapter());
 
     this.initialized = true;
   }

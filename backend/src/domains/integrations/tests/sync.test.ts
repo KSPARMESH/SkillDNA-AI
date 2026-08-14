@@ -19,8 +19,8 @@ async function runSyncTests() {
     assert.strictEqual(stackOverflowAdapter.platformName, 'STACKOVERFLOW');
 
     const platforms = PlatformAdapterFactory.getRegisteredPlatforms();
-    assert.ok(platforms.length >= 10, 'Should have registered at least 10 platform connectors');
-    console.log('  ✅ Passed: PlatformAdapterFactory resolution (10 connectors registered)');
+    assert.strictEqual(platforms.length, 11, 'Should have registered all 11 platform connectors');
+    console.log('  ✅ Passed: PlatformAdapterFactory resolution (11 connectors registered)');
   }
 
   // Test Case 2: Project Deduplication

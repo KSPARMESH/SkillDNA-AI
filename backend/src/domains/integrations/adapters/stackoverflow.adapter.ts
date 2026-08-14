@@ -1,7 +1,11 @@
 import { BasePlatformAdapter, NormalizedPlatformResult } from './base.adapter';
 import { PlatformType } from '@skilldna/shared';
 import { INTEGRATION_CONSTANTS } from '../constants/integration.constants';
-import { IntegrationNotFoundError, SyncFailedError } from '../errors/integration.errors';
+import {
+  IntegrationNotFoundError,
+  SyncFailedError,
+  RateLimitExceededError,
+} from '../errors/integration.errors';
 
 export class StackOverflowAdapter extends BasePlatformAdapter {
   readonly platformName = PlatformType.STACKOVERFLOW;
@@ -12,7 +16,14 @@ export class StackOverflowAdapter extends BasePlatformAdapter {
 
     try {
       const res = await fetch(
-        `${INTEGRATION_CONSTANTS.API_ENDPOINTS.STACKOVERFLOW}/users/${cleanUsername}?site=stackoverflow`,
+        `${INTEGRATION_CONSTANTS.API_ENDPOINTS.STACKOVERFLOW}/users/${encodeURIComponent(cleanUsername)}?site=stackoverflow`,
+        {
+          headers: {
+            'User-Agent': 'SkillDNA-AI/1.0 (Integration Bot; contact@skilldna.ai)',
+            'Accept-Encoding': 'gzip,deflate',
+            Accept: 'application/json',
+          },
+        },
       );
       if (!res.ok) return false;
       const data: any = await res.json();
@@ -25,15 +36,47 @@ export class StackOverflowAdapter extends BasePlatformAdapter {
   async fetchData(username: string): Promise<NormalizedPlatformResult> {
     const cleanUsername = this.sanitizeUsername(username);
 
-    const res = await fetch(
-      `${INTEGRATION_CONSTANTS.API_ENDPOINTS.STACKOVERFLOW}/users/${cleanUsername}?site=stackoverflow`,
-    );
-
-    if (!res.ok) {
-      throw new SyncFailedError('STACKOVERFLOW', `Stack Overflow API error ${res.status}`);
+    let res: Response;
+    try {
+      res = await fetch(
+        `${INTEGRATION_CONSTANTS.API_ENDPOINTS.STACKOVERFLOW}/users/${encodeURIComponent(cleanUsername)}?site=stackoverflow`,
+        {
+          headers: {
+            'User-Agent': 'SkillDNA-AI/1.0 (Integration Bot; contact@skilldna.ai)',
+            'Accept-Encoding': 'gzip,deflate',
+            Accept: 'application/json',
+          },
+        },
+      );
+    } catch (err: any) {
+      throw new SyncFailedError(
+        this.platformName,
+        `Network error communicating with Stack Overflow: ${err.message}`,
+      );
     }
 
-    const data: any = await res.json();
+    if (res.status === 429) {
+      throw new RateLimitExceededError(this.platformName);
+    }
+
+    if (res.status === 404) {
+      throw new IntegrationNotFoundError(`Stack Overflow user ID '${cleanUsername}'`);
+    }
+
+    if (!res.ok) {
+      throw new SyncFailedError(this.platformName, `Stack Overflow API error ${res.status}`);
+    }
+
+    let data: any;
+    try {
+      data = await res.json();
+    } catch {
+      throw new SyncFailedError(
+        this.platformName,
+        'Malformed JSON response from Stack Overflow API',
+      );
+    }
+
     if (!Array.isArray(data.items) || data.items.length === 0) {
       throw new IntegrationNotFoundError(`Stack Overflow user ID '${cleanUsername}'`);
     }
