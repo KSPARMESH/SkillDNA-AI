@@ -182,3 +182,21 @@ export async function syncPlatformApi(
 export async function getSyncHistoryApi() {
   return fetchApi('/integrations/sync/history', { method: 'GET' });
 }
+
+/**
+ * Fetches the authenticated user's latest persisted SkillDNA report via GET /api/v1/ai/skill-dna-report
+ */
+export async function getSkillDnaReportApi() {
+  return fetchApi('/ai/skill-dna-report', {
+    method: 'GET',
+  });
+}
+
+/**
+ * Triggers AI generation or regeneration of SkillDNA Report via POST /api/v1/ai/skill-dna-report
+ */
+export async function generateSkillDnaReportApi() {
+  return fetchApi('/ai/skill-dna-report', {
+    method: 'POST',
+  });
+}

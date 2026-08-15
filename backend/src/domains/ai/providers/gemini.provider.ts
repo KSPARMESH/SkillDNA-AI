@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { config } from '../../../config';
 import { AppError, HttpStatusCode, ApiErrorCode } from '@skilldna/shared';
 
@@ -7,11 +7,14 @@ export interface IGeminiProvider {
 }
 
 export class GeminiProvider implements IGeminiProvider {
-  private genAI: GoogleGenerativeAI | null = null;
+  private genAI: GoogleGenAI | null = null;
 
   constructor(private apiKey: string = config.geminiApiKey) {
     if (this.apiKey && this.apiKey.trim() !== '') {
-      this.genAI = new GoogleGenerativeAI(this.apiKey);
+      this.genAI = new GoogleGenAI({
+        apiKey: this.apiKey,
+        apiVersion: 'v1',
+      });
     }
   }
 
@@ -30,20 +33,20 @@ export class GeminiProvider implements IGeminiProvider {
       );
     }
 
-    const modelName = config.geminiModel || 'gemini-2.5-flash';
+    const modelName = config.geminiModel || 'gemini-3.7-flash';
 
     try {
-      const model = this.genAI.getGenerativeModel({
+      const response = await this.genAI.models.generateContent({
         model: modelName,
-        generationConfig: {
+        contents: prompt,
+        config: {
           temperature: 0.2,
           responseMimeType: 'application/json',
         },
       });
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const rawText = response.text();
+      const rawText =
+        (typeof response.text === 'function' ? (response as any).text() : response.text) || '';
 
       return {
         rawText,
@@ -65,7 +68,10 @@ export class GeminiProvider implements IGeminiProvider {
       const errorType = error?.name || error?.constructor?.name || 'UnknownGeminiError';
 
       // Sanitize any potential API keys/tokens from error message before logging
-      const sanitizedErrorMessage = errorMessage.replace(/key=[A-Za-z0-9_-]+/gi, 'key=[REDACTED]');
+      const sanitizedErrorMessage = errorMessage
+        .replace(/key=[A-Za-z0-9_-]+/gi, 'key=[REDACTED]')
+        .replace(/AIzaSy[A-Za-z0-9_-]{33}/gi, '[REDACTED_API_KEY]')
+        .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]');
 
       // Diagnostic logging (safe metadata only - NEVER logs keys, tokens, or prompt data)
       console.error(

@@ -504,14 +504,100 @@ async function runAiDomainTests() {
       '  9. Testing Gemini API rate limits, error sanitization, and network failure handling...',
     );
 
-    // Direct GeminiProvider unit test for rate limit handling
+    // Direct GeminiProvider unit test for successful structured JSON call with @google/genai shape
     const mockProviderInstance = new GeminiProvider('fake-api-key');
+    let capturedGenerateContentParams: any = null;
     (mockProviderInstance as any).genAI = {
-      getGenerativeModel: () => ({
-        generateContent: async () => {
-          throw new Error('429 Too Many Requests: [GoogleGenerativeAI Error]: RESOURCE_EXHAUSTED');
+      models: {
+        generateContent: async (params: any) => {
+          capturedGenerateContentParams = params;
+          return {
+            text: JSON.stringify(validGeminiOutputFixture),
+            candidates: [{ finishReason: 'STOP' }],
+            usageMetadata: {
+              promptTokenCount: 100,
+              candidatesTokenCount: 200,
+              totalTokenCount: 300,
+            },
+          };
         },
-      }),
+      },
+    };
+
+    const successResult = await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
+    assert.strictEqual(capturedGenerateContentParams.model, 'gemini-3.7-flash');
+    assert.strictEqual(capturedGenerateContentParams.contents, 'test prompt');
+    assert.strictEqual(capturedGenerateContentParams.config.temperature, 0.2);
+    assert.strictEqual(capturedGenerateContentParams.config.responseMimeType, 'application/json');
+    assert.strictEqual(successResult.rawText, JSON.stringify(validGeminiOutputFixture));
+    assert.strictEqual(successResult.rawResponse.model, 'gemini-3.7-flash');
+    assert.strictEqual(successResult.rawResponse.finishReason, 'STOP');
+    assert.strictEqual(successResult.rawResponse.candidatesCount, 1);
+
+    // Direct GeminiProvider unit test for 400 bad request error handling
+    (mockProviderInstance as any).genAI = {
+      models: {
+        generateContent: async () => {
+          const err: any = new Error('[400 Bad Request] Invalid argument provided to model');
+          err.status = 400;
+          throw err;
+        },
+      },
+    };
+    let caught400: any = null;
+    try {
+      await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
+    } catch (err: any) {
+      caught400 = err;
+    }
+    assert.ok(caught400 instanceof AppError);
+    assert.strictEqual(caught400.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
+
+    // Direct GeminiProvider unit test for 403 / invalid API key error handling
+    (mockProviderInstance as any).genAI = {
+      models: {
+        generateContent: async () => {
+          const err: any = new Error('[403 Forbidden] API_KEY_INVALID: API key not valid');
+          err.status = 403;
+          throw err;
+        },
+      },
+    };
+    let caught403: any = null;
+    try {
+      await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
+    } catch (err: any) {
+      caught403 = err;
+    }
+    assert.ok(caught403 instanceof AppError);
+    assert.strictEqual(caught403.message, 'Invalid Gemini API key provided.');
+
+    // Direct GeminiProvider unit test for 404 model not found error handling
+    (mockProviderInstance as any).genAI = {
+      models: {
+        generateContent: async () => {
+          const err: any = new Error('[404 Not Found] models/gemini-3.7-flash is not found');
+          err.status = 404;
+          throw err;
+        },
+      },
+    };
+    let caught404: any = null;
+    try {
+      await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
+    } catch (err: any) {
+      caught404 = err;
+    }
+    assert.ok(caught404 instanceof AppError);
+    assert.strictEqual(caught404.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
+
+    // Direct GeminiProvider unit test for 429 rate limit handling
+    (mockProviderInstance as any).genAI = {
+      models: {
+        generateContent: async () => {
+          throw new Error('429 Too Many Requests: [GoogleGenAI Error]: RESOURCE_EXHAUSTED');
+        },
+      },
     };
 
     let caughtRateLimit: any = null;
@@ -528,15 +614,15 @@ async function runAiDomainTests() {
       'Rate limit error must be properly identified and return 429',
     );
 
-    // Direct GeminiProvider unit test for upstream failure with sensitive query key leak in error text
+    // Direct GeminiProvider unit test for upstream 5xx failure with sensitive query key leak in error text
     (mockProviderInstance as any).genAI = {
-      getGenerativeModel: () => ({
+      models: {
         generateContent: async () => {
           throw new Error(
-            'Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSySecretApiKey12345: [500 Internal Server Error] Backend failure',
+            'Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=AIzaSySecretApiKey12345: [500 Internal Server Error] Backend failure with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret',
           );
         },
-      }),
+      },
     };
 
     let loggedDiagnosticTag = '';
@@ -711,8 +797,8 @@ async function runAiDomainTests() {
     // Default model verification
     assert.strictEqual(
       config.geminiModel,
-      process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-      'Configured Gemini model must default to gemini-2.5-flash or match GEMINI_MODEL env',
+      process.env.GEMINI_MODEL || 'gemini-3.7-flash',
+      'Configured Gemini model must default to gemini-3.7-flash or match GEMINI_MODEL env',
     );
     assert.notStrictEqual(
       config.geminiModel,
@@ -737,7 +823,165 @@ async function runAiDomainTests() {
     );
   }
 
-  console.log('\n🎉 All 12 Backend SkillDNA AI Report Generation Tests Passed Successfully!');
+  // ---------------------------------------------------------------------------
+  // Test 13: Authenticated Latest Report Retrieval (GET /api/v1/ai/skill-dna-report)
+  // ---------------------------------------------------------------------------
+  {
+    console.log(
+      '  13. Testing authenticated latest report retrieval (GET /api/v1/ai/skill-dna-report)...',
+    );
+    const ctxGet = createMockExpressContext(`Bearer ${user1Token}`);
+    authenticate(ctxGet.req, ctxGet.res, ctxGet.next);
+    assert.strictEqual(ctxGet.getError(), null);
+
+    await AiController.getLatestReport(ctxGet.req, ctxGet.res, ctxGet.next);
+    assert.strictEqual(ctxGet.getError(), null, 'GET report must succeed without error');
+    assert.strictEqual(ctxGet.getStatusCode(), 200, 'GET report must return HTTP 200');
+
+    const res = ctxGet.getResponse();
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(res.message, 'Latest SkillDNA Report retrieved successfully.');
+    assert.ok(res.data, 'Response must contain report data');
+    assert.strictEqual(res.data.userId, user1Id);
+    assert.strictEqual(res.data.overallScore, 93.4, 'Must return the newest report for user 1');
+    assert.strictEqual(res.data.codeQualityScore, 95.0);
+    assert.ok(Array.isArray(res.data.strengths));
+    assert.ok(Array.isArray(res.data.weaknesses));
+    assert.ok(res.data.recommendationSummary);
+    assert.ok(res.data.generatedAt);
+    console.log('     ✓ Latest report retrieved successfully with full fields and HTTP 200');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 14: Unauthenticated Retrieval Rejection (Missing & Invalid Auth)
+  // ---------------------------------------------------------------------------
+  {
+    console.log('  14. Testing unauthenticated report retrieval rejection...');
+    const ctxNoAuth = createMockExpressContext(undefined);
+    authenticate(ctxNoAuth.req, ctxNoAuth.res, ctxNoAuth.next);
+    const err = ctxNoAuth.getError();
+    assert.ok(err instanceof AppError);
+    assert.strictEqual(err.statusCode, HttpStatusCode.UNAUTHORIZED);
+
+    const ctxDirect = createMockExpressContext(undefined);
+    await AiController.getLatestReport(ctxDirect.req, ctxDirect.res, ctxDirect.next);
+    const errDirect = ctxDirect.getError();
+    assert.ok(errDirect instanceof AppError);
+    assert.strictEqual(errDirect.statusCode, HttpStatusCode.UNAUTHORIZED);
+    console.log('     ✓ Unauthenticated GET cleanly rejected with 401 UNAUTHORIZED');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 15: User Isolation on Retrieval (Never return another user's report)
+  // ---------------------------------------------------------------------------
+  {
+    console.log('  15. Testing user isolation on report retrieval...');
+    // User 2 (Bob) attempts to retrieve User 1's report by passing userId in params or query
+    const ctxBob = createMockExpressContext(`Bearer ${user2Token}`, {}, { userId: user1Id });
+    authenticate(ctxBob.req, ctxBob.res, ctxBob.next);
+    await AiController.getLatestReport(ctxBob.req, ctxBob.res, ctxBob.next);
+
+    assert.strictEqual(ctxBob.getError(), null);
+    const res = ctxBob.getResponse();
+    assert.strictEqual(res.success, true);
+    // Bob has not generated any reports yet -> should return null for Bob, NOT User 1's report
+    assert.strictEqual(
+      res.data,
+      null,
+      "Bob must not receive Alice's report even if passing Alice's userId",
+    );
+    assert.strictEqual(res.message, 'No SkillDNA report found for the authenticated user.');
+    console.log('     ✓ User isolation strictly enforced; spoofed userId completely ignored');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 16: No-Report Behavior (New user with zero reports)
+  // ---------------------------------------------------------------------------
+  {
+    console.log('  16. Testing no-report behavior for new user...');
+    const user3Email = `ai.fresh.${Date.now()}@skilldna.ai`;
+    const user3Auth = await AuthService.register({
+      email: user3Email,
+      password: 'Password123!',
+      firstName: 'Charlie',
+      lastName: 'Newbie',
+    });
+
+    const ctxCharlie = createMockExpressContext(`Bearer ${user3Auth.accessToken}`);
+    authenticate(ctxCharlie.req, ctxCharlie.res, ctxCharlie.next);
+    await AiController.getLatestReport(ctxCharlie.req, ctxCharlie.res, ctxCharlie.next);
+
+    assert.strictEqual(ctxCharlie.getError(), null);
+    assert.strictEqual(ctxCharlie.getStatusCode(), 200);
+    const res = ctxCharlie.getResponse();
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(res.data, null, 'Empty report state must return data: null without error');
+    assert.strictEqual(res.message, 'No SkillDNA report found for the authenticated user.');
+    console.log('     ✓ Zero-report user returns standard { success: true, data: null } response');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 17: Newest-Report Selection (Ordering by generatedAt desc)
+  // ---------------------------------------------------------------------------
+  let thirdReportId = '';
+  {
+    console.log('  17. Testing newest-report selection logic when multiple reports exist...');
+    // User 1 has report 1 (score 89.2) and report 2 (score 93.4)
+    const latestFromService = await AiService.getLatestSkillDnaReport(user1Id);
+    assert.ok(latestFromService);
+    assert.strictEqual(latestFromService.overallScore, 93.4);
+    assert.strictEqual(latestFromService.codeQualityScore, 95.0);
+
+    // Add a third newer report
+    const thirdReport = await prisma.skillDnaReport.create({
+      data: {
+        userId: user1Id,
+        reportType: ReportType.SKILLDNA_FULL,
+        overallScore: 97.5,
+        codeQualityScore: 98.0,
+        problemSolvingScore: 96.0,
+        systemDesignScore: 97.0,
+        breadthScore: 95.0,
+        consistencyScore: 98.0,
+        strengths: ['Mastery in distributed architecture.'],
+        weaknesses: ['None.'],
+        recommendationSummary: 'Top echelon engineer.',
+        generatedAt: new Date(Date.now() + 120000),
+      },
+    });
+    thirdReportId = thirdReport.id;
+
+    const ctxNewest = createMockExpressContext(`Bearer ${user1Token}`);
+    authenticate(ctxNewest.req, ctxNewest.res, ctxNewest.next);
+    await AiController.getLatestReport(ctxNewest.req, ctxNewest.res, ctxNewest.next);
+
+    const res = ctxNewest.getResponse();
+    assert.strictEqual(res.data.id, thirdReport.id);
+    assert.strictEqual(res.data.overallScore, 97.5, 'Must return the third newest report');
+    console.log('     ✓ Newest report accurately selected using generatedAt descending');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 18: Historical Reports Remain Untouched in Database
+  // ---------------------------------------------------------------------------
+  {
+    console.log('  18. Testing historical reports preservation in database...');
+    const allReports = await prisma.skillDnaReport.findMany({
+      where: { userId: user1Id },
+      orderBy: { generatedAt: 'asc' },
+    });
+
+    assert.strictEqual(allReports.length, 4, 'All 4 generated reports must remain preserved');
+    assert.strictEqual(allReports[0].id, firstGeneratedReportId);
+    assert.strictEqual(allReports[0].overallScore, 89.2);
+    assert.strictEqual(allReports[allReports.length - 1].id, thirdReportId);
+    assert.strictEqual(allReports[allReports.length - 1].overallScore, 97.5);
+    console.log('     ✓ All historical records verified intact and immutable');
+  }
+
+  console.log(
+    '\n🎉 All 18 Backend SkillDNA AI Report Generation & Retrieval Tests Passed Successfully!',
+  );
 }
 
 runAiDomainTests()

@@ -24,6 +24,20 @@ export class AiService {
     this.geminiProviderInstance = null;
   }
 
+  static async getLatestSkillDnaReport(userId: string) {
+    const report = await prisma.skillDnaReport.findFirst({
+      where: {
+        userId,
+        reportType: ReportType.SKILLDNA_FULL,
+      },
+      orderBy: {
+        generatedAt: 'desc',
+      },
+    });
+
+    return report;
+  }
+
   static async generateSkillDnaReport(userId: string) {
     // 1. Build structured context from actual persisted user data
     const context = await AiContextBuilder.buildUserSkillDnaContext(userId);
@@ -53,7 +67,7 @@ export class AiService {
         weaknesses: validatedOutput.weaknesses,
         recommendationSummary: validatedOutput.recommendationSummary,
         rawAiOutput: {
-          model: config.geminiModel || 'gemini-2.5-flash',
+          model: config.geminiModel || 'gemini-3.7-flash',
           generatedAt: new Date().toISOString(),
           evaluatedContext: {
             totalProjects: context.evidenceSummary.totalProjects,
