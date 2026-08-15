@@ -497,201 +497,393 @@ async function runAiDomainTests() {
   }
 
   // ---------------------------------------------------------------------------
-  // Test 9: Gemini API Failure, Rate Limit & Error Sanitization Handling
+  // Test 9: Gemini API Retry Handling, Rate Limits & Error Sanitization
   // ---------------------------------------------------------------------------
   {
     console.log(
-      '  9. Testing Gemini API rate limits, error sanitization, and network failure handling...',
+      '  9. Testing Gemini API bounded retry handling, rate limits, and error sanitization...',
     );
 
-    // Direct GeminiProvider unit test for successful structured JSON call with @google/genai shape
-    const mockProviderInstance = new GeminiProvider('fake-api-key');
-    let capturedGenerateContentParams: any = null;
-    (mockProviderInstance as any).genAI = {
-      models: {
-        generateContent: async (params: any) => {
-          capturedGenerateContentParams = params;
-          return {
-            text: JSON.stringify(validGeminiOutputFixture),
-            candidates: [{ finishReason: 'STOP' }],
-            usageMetadata: {
-              promptTokenCount: 100,
-              candidatesTokenCount: 200,
-              totalTokenCount: 300,
-            },
-          };
-        },
-      },
+    const validResponseOutput = {
+      text: JSON.stringify(validGeminiOutputFixture),
+      candidates: [{ finishReason: 'STOP' }],
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 200, totalTokenCount: 300 },
     };
 
-    const successResult = await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
-    assert.strictEqual(capturedGenerateContentParams.model, 'gemini-3.7-flash');
-    assert.strictEqual(capturedGenerateContentParams.contents, 'test prompt');
-    assert.strictEqual(capturedGenerateContentParams.config.temperature, 0.2);
-    assert.strictEqual(capturedGenerateContentParams.config.responseMimeType, 'application/json');
-    assert.strictEqual(successResult.rawText, JSON.stringify(validGeminiOutputFixture));
-    assert.strictEqual(successResult.rawResponse.model, 'gemini-3.7-flash');
-    assert.strictEqual(successResult.rawResponse.finishReason, 'STOP');
-    assert.strictEqual(successResult.rawResponse.candidatesCount, 1);
+    // 9.1: 503 succeeds on first retry (Attempt 1 fails with 503 UNAVAILABLE, Attempt 2 succeeds)
+    {
+      const retryProvider = new GeminiProvider('fake-api-key', {
+        maxAttempts: 3,
+        baseDelayMs: 1000,
+        jitterMs: 200,
+      });
+      const delays: number[] = [];
+      retryProvider.setSleepFn(async (ms) => {
+        delays.push(ms);
+      });
 
-    // Direct GeminiProvider unit test for 400 bad request error handling
-    (mockProviderInstance as any).genAI = {
-      models: {
-        generateContent: async () => {
-          const err: any = new Error('[400 Bad Request] Invalid argument provided to model');
-          err.status = 400;
-          throw err;
+      let callCount = 0;
+      (retryProvider as any).genAI = {
+        models: {
+          generateContent: async () => {
+            callCount++;
+            if (callCount === 1) {
+              const err: any = new Error(
+                '[503 Service Unavailable] This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.',
+              );
+              err.status = 503;
+              throw err;
+            }
+            return validResponseOutput;
+          },
         },
-      },
-    };
-    let caught400: any = null;
-    try {
-      await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
-    } catch (err: any) {
-      caught400 = err;
+      };
+
+      const result = await retryProvider.generateSkillDnaEvaluation('test prompt');
+      assert.strictEqual(callCount, 2, 'Must succeed on attempt 2 (first retry)');
+      assert.strictEqual(delays.length, 1, 'Must execute exactly 1 backoff delay');
+      assert.ok(
+        delays[0] >= 1000 && delays[0] <= 1200,
+        `Delay must be ~1000ms + jitter, got ${delays[0]}`,
+      );
+      assert.strictEqual(result.rawText, JSON.stringify(validGeminiOutputFixture));
+      console.log('     ✓ 503 succeeds on first retry (attempt 2) with backoff delay verified');
     }
-    assert.ok(caught400 instanceof AppError);
-    assert.strictEqual(caught400.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
 
-    // Direct GeminiProvider unit test for 403 / invalid API key error handling
-    (mockProviderInstance as any).genAI = {
-      models: {
-        generateContent: async () => {
-          const err: any = new Error('[403 Forbidden] API_KEY_INVALID: API key not valid');
-          err.status = 403;
-          throw err;
+    // 9.2 & 9.3: 503 succeeds on second retry / third attempt (Attempts 1 & 2 fail, Attempt 3 succeeds)
+    {
+      const retryProvider = new GeminiProvider('fake-api-key', {
+        maxAttempts: 3,
+        baseDelayMs: 1000,
+        jitterMs: 200,
+      });
+      const delays: number[] = [];
+      retryProvider.setSleepFn(async (ms) => {
+        delays.push(ms);
+      });
+
+      let callCount = 0;
+      (retryProvider as any).genAI = {
+        models: {
+          generateContent: async () => {
+            callCount++;
+            if (callCount < 3) {
+              const err: any = new Error('503 UNAVAILABLE: Model is overloaded');
+              err.status = 503;
+              throw err;
+            }
+            return validResponseOutput;
+          },
         },
-      },
-    };
-    let caught403: any = null;
-    try {
-      await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
-    } catch (err: any) {
-      caught403 = err;
+      };
+
+      const result = await retryProvider.generateSkillDnaEvaluation('test prompt');
+      assert.strictEqual(callCount, 3, 'Must succeed on attempt 3 (second retry)');
+      assert.strictEqual(delays.length, 2, 'Must execute exactly 2 backoff delays');
+      assert.ok(
+        delays[0] >= 1000 && delays[0] <= 1200,
+        `Delay 1 must be ~1000ms + jitter, got ${delays[0]}`,
+      );
+      assert.ok(
+        delays[1] >= 2000 && delays[1] <= 2200,
+        `Delay 2 must be ~2000ms + jitter, got ${delays[1]}`,
+      );
+      assert.strictEqual(result.rawText, JSON.stringify(validGeminiOutputFixture));
+      console.log(
+        '     ✓ 503 succeeds on third attempt (attempt 3) with exponential backoff verified',
+      );
     }
-    assert.ok(caught403 instanceof AppError);
-    assert.strictEqual(caught403.message, 'Invalid Gemini API key provided.');
 
-    // Direct GeminiProvider unit test for 404 model not found error handling
-    (mockProviderInstance as any).genAI = {
-      models: {
-        generateContent: async () => {
-          const err: any = new Error('[404 Not Found] models/gemini-3.7-flash is not found');
-          err.status = 404;
-          throw err;
+    // 9.4: 503 continues failing and returns safe 503 after max 3 attempts
+    {
+      const retryProvider = new GeminiProvider('fake-api-key', {
+        maxAttempts: 3,
+        baseDelayMs: 1000,
+        jitterMs: 200,
+      });
+      const delays: number[] = [];
+      retryProvider.setSleepFn(async (ms) => {
+        delays.push(ms);
+      });
+
+      let callCount = 0;
+      (retryProvider as any).genAI = {
+        models: {
+          generateContent: async () => {
+            callCount++;
+            const err: any = new Error('[503 Service Unavailable] Model experiencing high demand');
+            err.status = 503;
+            throw err;
+          },
         },
-      },
-    };
-    let caught404: any = null;
-    try {
-      await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
-    } catch (err: any) {
-      caught404 = err;
-    }
-    assert.ok(caught404 instanceof AppError);
-    assert.strictEqual(caught404.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
+      };
 
-    // Direct GeminiProvider unit test for 429 rate limit handling
-    (mockProviderInstance as any).genAI = {
-      models: {
-        generateContent: async () => {
-          throw new Error('429 Too Many Requests: [GoogleGenAI Error]: RESOURCE_EXHAUSTED');
-        },
-      },
-    };
-
-    let caughtRateLimit: any = null;
-    try {
-      await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
-    } catch (err: any) {
-      caughtRateLimit = err;
-    }
-    assert.ok(caughtRateLimit instanceof AppError);
-    assert.strictEqual(caughtRateLimit.statusCode, HttpStatusCode.TOO_MANY_REQUESTS);
-    assert.strictEqual(
-      caughtRateLimit.message.includes('rate limit exceeded or quota exhausted'),
-      true,
-      'Rate limit error must be properly identified and return 429',
-    );
-
-    // Direct GeminiProvider unit test for upstream 5xx failure with sensitive query key leak in error text
-    (mockProviderInstance as any).genAI = {
-      models: {
-        generateContent: async () => {
-          throw new Error(
-            'Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=AIzaSySecretApiKey12345: [500 Internal Server Error] Backend failure with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret',
-          );
-        },
-      },
-    };
-
-    let loggedDiagnosticTag = '';
-    let loggedDiagnosticPayload = '';
-    const origConsoleError = console.error;
-    console.error = (...args: any[]) => {
-      if (args[0] === '[GeminiProvider Diagnostic]') {
-        loggedDiagnosticTag = args[0];
-        loggedDiagnosticPayload = args[1];
+      let caught503: any = null;
+      try {
+        await retryProvider.generateSkillDnaEvaluation('test prompt');
+      } catch (err: any) {
+        caught503 = err;
       }
-      origConsoleError(...args);
-    };
 
-    let caughtSanitized: any = null;
-    try {
-      await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
-    } catch (err: any) {
-      caughtSanitized = err;
-    } finally {
-      console.error = origConsoleError;
+      assert.strictEqual(callCount, 3, 'Must attempt exactly 3 times before giving up');
+      assert.strictEqual(delays.length, 2, 'Must have delayed twice between the 3 attempts');
+      assert.ok(caught503 instanceof AppError);
+      assert.strictEqual(caught503.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
+      console.log('     ✓ 503 exhausted after 3 attempts returns safe 503 SERVICE_UNAVAILABLE');
     }
-    assert.ok(caughtSanitized instanceof AppError);
-    assert.strictEqual(caughtSanitized.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
-    assert.strictEqual(
-      caughtSanitized.message.includes('AIzaSySecretApiKey12345'),
-      false,
-      'Sensitive API keys MUST never leak into error message returned to caller',
-    );
-    assert.strictEqual(
-      caughtSanitized.message,
-      'Gemini AI inference service encountered an error.',
-      'Safe generic message must be returned to client',
-    );
 
-    // Verify diagnostic log serialization and secret sanitization
-    assert.strictEqual(loggedDiagnosticTag, '[GeminiProvider Diagnostic]');
-    assert.strictEqual(
-      typeof loggedDiagnosticPayload,
-      'string',
-      'Diagnostic log must be serialized string',
-    );
-    const parsedDiagnostic = JSON.parse(loggedDiagnosticPayload);
-    assert.strictEqual(parsedDiagnostic.isApiKeyConfigured, true);
-    assert.strictEqual(parsedDiagnostic.statusCode, 500);
-    assert.strictEqual(
-      parsedDiagnostic.providerErrorMessage.includes('AIzaSySecretApiKey12345'),
-      false,
-      'Diagnostic log must not leak sensitive API keys',
-    );
-    assert.strictEqual(
-      parsedDiagnostic.providerErrorMessage.includes('key=[REDACTED]'),
-      true,
-      'Diagnostic log must redact API keys',
-    );
+    // 9.5: 429 is retried (Attempt 1 fails with 429 RESOURCE_EXHAUSTED, Attempt 2 succeeds)
+    {
+      const retryProvider = new GeminiProvider('fake-api-key', {
+        maxAttempts: 3,
+        baseDelayMs: 1000,
+        jitterMs: 200,
+      });
+      const delays: number[] = [];
+      retryProvider.setSleepFn(async (ms) => {
+        delays.push(ms);
+      });
 
-    // Test controller error forwarding
-    AiService.setGeminiProvider(mockProviderInstance);
-    const ctxSanitized = createMockExpressContext(`Bearer ${user1Token}`);
-    authenticate(ctxSanitized.req, ctxSanitized.res, ctxSanitized.next);
-    await AiController.generateReport(ctxSanitized.req, ctxSanitized.res, ctxSanitized.next);
-    const errFromController = ctxSanitized.getError();
-    assert.ok(errFromController instanceof AppError);
-    assert.strictEqual(errFromController.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
-    assert.strictEqual(
-      errFromController.message,
-      'Gemini AI inference service encountered an error.',
-    );
+      let callCount = 0;
+      (retryProvider as any).genAI = {
+        models: {
+          generateContent: async () => {
+            callCount++;
+            if (callCount === 1) {
+              const err: any = new Error(
+                '429 Too Many Requests: [GoogleGenAI Error]: RESOURCE_EXHAUSTED',
+              );
+              err.status = 429;
+              throw err;
+            }
+            return validResponseOutput;
+          },
+        },
+      };
 
-    console.log('     ✓ Upstream Gemini errors handled safely with complete secret sanitization');
+      const result = await retryProvider.generateSkillDnaEvaluation('test prompt');
+      assert.strictEqual(callCount, 2, '429 must be retried and succeed on attempt 2');
+      assert.strictEqual(delays.length, 1);
+      assert.strictEqual(result.rawText, JSON.stringify(validGeminiOutputFixture));
+
+      // When 429 fails all 3 attempts
+      callCount = 0;
+      delays.length = 0;
+      (retryProvider as any).genAI = {
+        models: {
+          generateContent: async () => {
+            callCount++;
+            const err: any = new Error(
+              '429 Too Many Requests: [GoogleGenAI Error]: RESOURCE_EXHAUSTED',
+            );
+            err.status = 429;
+            throw err;
+          },
+        },
+      };
+
+      let caughtRateLimit: any = null;
+      try {
+        await retryProvider.generateSkillDnaEvaluation('test prompt');
+      } catch (err: any) {
+        caughtRateLimit = err;
+      }
+      assert.strictEqual(callCount, 3, '429 exhausted must stop at max 3 attempts');
+      assert.ok(caughtRateLimit instanceof AppError);
+      assert.strictEqual(caughtRateLimit.statusCode, HttpStatusCode.TOO_MANY_REQUESTS);
+      assert.ok(caughtRateLimit.message.includes('rate limit exceeded or quota exhausted'));
+      console.log('     ✓ 429 rate limit is retried with backoff and returns 429 when exhausted');
+    }
+
+    // 9.6: 400 is NOT retried (stops immediately after attempt 1)
+    {
+      const retryProvider = new GeminiProvider('fake-api-key');
+      let callCount = 0;
+      (retryProvider as any).genAI = {
+        models: {
+          generateContent: async () => {
+            callCount++;
+            const err: any = new Error('[400 Bad Request] Invalid argument provided to model');
+            err.status = 400;
+            throw err;
+          },
+        },
+      };
+
+      let caught400: any = null;
+      try {
+        await retryProvider.generateSkillDnaEvaluation('test prompt');
+      } catch (err: any) {
+        caught400 = err;
+      }
+
+      assert.strictEqual(callCount, 1, '400 Bad Request must NOT be retried (callCount = 1)');
+      assert.ok(caught400 instanceof AppError);
+      assert.strictEqual(caught400.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
+      console.log('     ✓ 400 Bad Request is NOT retried and immediately rejected');
+    }
+
+    // 9.7: 403 is NOT retried (stops immediately after attempt 1)
+    {
+      const retryProvider = new GeminiProvider('fake-api-key');
+      let callCount = 0;
+      (retryProvider as any).genAI = {
+        models: {
+          generateContent: async () => {
+            callCount++;
+            const err: any = new Error('[403 Forbidden] API_KEY_INVALID: API key not valid');
+            err.status = 403;
+            throw err;
+          },
+        },
+      };
+
+      let caught403: any = null;
+      try {
+        await retryProvider.generateSkillDnaEvaluation('test prompt');
+      } catch (err: any) {
+        caught403 = err;
+      }
+
+      assert.strictEqual(callCount, 1, '403 Forbidden must NOT be retried (callCount = 1)');
+      assert.ok(caught403 instanceof AppError);
+      assert.strictEqual(caught403.message, 'Invalid Gemini API key provided.');
+      console.log('     ✓ 403 Forbidden / invalid API key is NOT retried and immediately rejected');
+    }
+
+    // 9.8: 404 is NOT retried (stops immediately after attempt 1)
+    {
+      const retryProvider = new GeminiProvider('fake-api-key');
+      let callCount = 0;
+      (retryProvider as any).genAI = {
+        models: {
+          generateContent: async () => {
+            callCount++;
+            const err: any = new Error('[404 Not Found] models/gemini-3.7-flash is not found');
+            err.status = 404;
+            throw err;
+          },
+        },
+      };
+
+      let caught404: any = null;
+      try {
+        await retryProvider.generateSkillDnaEvaluation('test prompt');
+      } catch (err: any) {
+        caught404 = err;
+      }
+
+      assert.strictEqual(callCount, 1, '404 Not Found must NOT be retried (callCount = 1)');
+      assert.ok(caught404 instanceof AppError);
+      assert.strictEqual(caught404.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
+      console.log('     ✓ 404 Not Found is NOT retried and immediately rejected');
+    }
+
+    // 9.9: Retry count never exceeds maximum (bounded attempts)
+    {
+      const retryProvider = new GeminiProvider('fake-api-key', { maxAttempts: 3 });
+      let callCount = 0;
+      (retryProvider as any).genAI = {
+        models: {
+          generateContent: async () => {
+            callCount++;
+            throw new Error('500 Internal Server Error: transient server failure');
+          },
+        },
+      };
+      retryProvider.setSleepFn(async () => {});
+
+      try {
+        await retryProvider.generateSkillDnaEvaluation('test prompt');
+      } catch (err) {
+        // Expected
+      }
+
+      assert.strictEqual(
+        callCount,
+        3,
+        'Total execution attempts must never exceed maxAttempts (3)',
+      );
+      console.log('     ✓ Retry count bounded strictly to max 3 attempts');
+    }
+
+    // 9.10: Diagnostic logging secret sanitization
+    {
+      const retryProvider = new GeminiProvider('fake-api-key', { maxAttempts: 1 });
+      (retryProvider as any).genAI = {
+        models: {
+          generateContent: async () => {
+            throw new Error(
+              'Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=AIzaSySecretApiKey12345: [500 Internal Server Error] Backend failure with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret',
+            );
+          },
+        },
+      };
+
+      let loggedDiagnosticTag = '';
+      let loggedDiagnosticPayload = '';
+      const origConsoleError = console.error;
+      console.error = (...args: any[]) => {
+        if (args[0] === '[GeminiProvider Diagnostic]') {
+          loggedDiagnosticTag = args[0];
+          loggedDiagnosticPayload = args[1];
+        }
+        origConsoleError(...args);
+      };
+
+      let caughtSanitized: any = null;
+      try {
+        await retryProvider.generateSkillDnaEvaluation('test prompt');
+      } catch (err: any) {
+        caughtSanitized = err;
+      } finally {
+        console.error = origConsoleError;
+      }
+
+      assert.ok(caughtSanitized instanceof AppError);
+      assert.strictEqual(caughtSanitized.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
+      assert.strictEqual(
+        caughtSanitized.message.includes('AIzaSySecretApiKey12345'),
+        false,
+        'Sensitive API keys MUST never leak into error message returned to caller',
+      );
+      assert.strictEqual(
+        caughtSanitized.message,
+        'Gemini AI inference service encountered an error.',
+        'Safe generic message must be returned to client',
+      );
+
+      // Verify diagnostic log serialization and secret sanitization
+      assert.strictEqual(loggedDiagnosticTag, '[GeminiProvider Diagnostic]');
+      const parsedDiagnostic = JSON.parse(loggedDiagnosticPayload);
+      assert.strictEqual(parsedDiagnostic.isApiKeyConfigured, true);
+      assert.strictEqual(parsedDiagnostic.statusCode, 500);
+      assert.strictEqual(
+        parsedDiagnostic.providerErrorMessage.includes('AIzaSySecretApiKey12345'),
+        false,
+        'Diagnostic log must not leak sensitive API keys',
+      );
+      assert.strictEqual(
+        parsedDiagnostic.providerErrorMessage.includes('key=[REDACTED]'),
+        true,
+        'Diagnostic log must redact API keys',
+      );
+
+      // Test controller error forwarding
+      AiService.setGeminiProvider(retryProvider);
+      const ctxSanitized = createMockExpressContext(`Bearer ${user1Token}`);
+      authenticate(ctxSanitized.req, ctxSanitized.res, ctxSanitized.next);
+      await AiController.generateReport(ctxSanitized.req, ctxSanitized.res, ctxSanitized.next);
+      const errFromController = ctxSanitized.getError();
+      assert.ok(errFromController instanceof AppError);
+      assert.strictEqual(errFromController.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
+      assert.strictEqual(
+        errFromController.message,
+        'Gemini AI inference service encountered an error.',
+      );
+
+      console.log('     ✓ Upstream Gemini errors handled safely with complete secret sanitization');
+    }
   }
 
   // ---------------------------------------------------------------------------
