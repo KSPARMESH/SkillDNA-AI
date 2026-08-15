@@ -539,11 +539,24 @@ async function runAiDomainTests() {
       }),
     };
 
+    let loggedDiagnosticTag = '';
+    let loggedDiagnosticPayload = '';
+    const origConsoleError = console.error;
+    console.error = (...args: any[]) => {
+      if (args[0] === '[GeminiProvider Diagnostic]') {
+        loggedDiagnosticTag = args[0];
+        loggedDiagnosticPayload = args[1];
+      }
+      origConsoleError(...args);
+    };
+
     let caughtSanitized: any = null;
     try {
       await mockProviderInstance.generateSkillDnaEvaluation('test prompt');
     } catch (err: any) {
       caughtSanitized = err;
+    } finally {
+      console.error = origConsoleError;
     }
     assert.ok(caughtSanitized instanceof AppError);
     assert.strictEqual(caughtSanitized.statusCode, HttpStatusCode.SERVICE_UNAVAILABLE);
@@ -556,6 +569,27 @@ async function runAiDomainTests() {
       caughtSanitized.message,
       'Gemini AI inference service encountered an error.',
       'Safe generic message must be returned to client',
+    );
+
+    // Verify diagnostic log serialization and secret sanitization
+    assert.strictEqual(loggedDiagnosticTag, '[GeminiProvider Diagnostic]');
+    assert.strictEqual(
+      typeof loggedDiagnosticPayload,
+      'string',
+      'Diagnostic log must be serialized string',
+    );
+    const parsedDiagnostic = JSON.parse(loggedDiagnosticPayload);
+    assert.strictEqual(parsedDiagnostic.isApiKeyConfigured, true);
+    assert.strictEqual(parsedDiagnostic.statusCode, 500);
+    assert.strictEqual(
+      parsedDiagnostic.providerErrorMessage.includes('AIzaSySecretApiKey12345'),
+      false,
+      'Diagnostic log must not leak sensitive API keys',
+    );
+    assert.strictEqual(
+      parsedDiagnostic.providerErrorMessage.includes('key=[REDACTED]'),
+      true,
+      'Diagnostic log must redact API keys',
     );
 
     // Test controller error forwarding

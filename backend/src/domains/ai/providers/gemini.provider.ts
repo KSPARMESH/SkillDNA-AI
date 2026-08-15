@@ -68,13 +68,16 @@ export class GeminiProvider implements IGeminiProvider {
       const sanitizedErrorMessage = errorMessage.replace(/key=[A-Za-z0-9_-]+/gi, 'key=[REDACTED]');
 
       // Diagnostic logging (safe metadata only - NEVER logs keys, tokens, or prompt data)
-      console.error('[GeminiProvider Diagnostic]', {
-        model: modelName,
-        isApiKeyConfigured: this.isConfigured(),
-        statusCode: errorStatus || null,
-        errorType,
-        providerErrorMessage: sanitizedErrorMessage,
-      });
+      console.error(
+        '[GeminiProvider Diagnostic]',
+        JSON.stringify({
+          model: modelName,
+          isApiKeyConfigured: this.isConfigured(),
+          statusCode: errorStatus || null,
+          errorType,
+          providerErrorMessage: sanitizedErrorMessage,
+        }),
+      );
 
       // Check for rate limit / quota exhaustion
       const isRateLimit =
