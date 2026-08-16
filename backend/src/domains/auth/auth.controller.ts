@@ -16,14 +16,12 @@ export class AuthController {
         throw new ValidationError('Registration payload validation failed.', validation.errors);
       }
       const result = await AuthService.register(req.body);
-      res
-        .status(201)
-        .json({
-          success: true,
-          message: 'User registered successfully.',
-          data: result,
-          timestamp: new Date().toISOString(),
-        });
+      res.status(201).json({
+        success: true,
+        message: 'User registered successfully.',
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
       next(error);
     }
@@ -32,14 +30,35 @@ export class AuthController {
   static async login(req: Request, res: Response, next: NextFunction) {
     try {
       const result = await AuthService.login(req.body);
-      res
-        .status(200)
-        .json({
-          success: true,
-          message: 'Login successful.',
-          data: result,
-          timestamp: new Date().toISOString(),
-        });
+      res.status(200).json({
+        success: true,
+        message: 'Login successful.',
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async refresh(req: Request, res: Response, next: NextFunction) {
+    try {
+      const refreshToken = req.body?.refreshToken;
+      if (!refreshToken || typeof refreshToken !== 'string' || refreshToken.trim() === '') {
+        throw new AppError(
+          'Refresh token is required.',
+          HttpStatusCode.BAD_REQUEST,
+          ApiErrorCode.VALIDATION_ERROR,
+        );
+      }
+      const result = await AuthService.refresh(refreshToken.trim());
+      res.status(200).json({
+        success: true,
+        statusCode: 200,
+        message: 'Token refreshed successfully.',
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
       next(error);
     }

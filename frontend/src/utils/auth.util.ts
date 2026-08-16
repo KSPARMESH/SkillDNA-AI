@@ -8,21 +8,32 @@ export interface JwtPayload {
 }
 
 /**
- * Safely decodes a JWT payload without external libraries.
+ * Safely decodes a JWT payload without external dependencies.
+ * Handles base64url format, strips and adds canonical base64 padding.
  */
 export function parseJwt(token: string): JwtPayload | null {
   try {
+    if (!token || typeof token !== 'string') return null;
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    const base64Url = parts[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join(''),
-    );
-    return JSON.parse(jsonPayload);
+
+    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '');
+    while (base64.length % 4 !== 0) {
+      base64 += '=';
+    }
+
+    if (typeof Buffer !== 'undefined') {
+      const jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
+      return JSON.parse(jsonPayload);
+    }
+
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const decodedText = new TextDecoder('utf-8').decode(bytes);
+    return JSON.parse(decodedText);
   } catch {
     return null;
   }
@@ -45,19 +56,11 @@ export function isTokenValid(token: string | null | undefined): boolean {
 
 /**
  * Retrieves the stored access token from localStorage.
- * Automatically clears localStorage if the token is invalid or expired.
  */
 export function getStoredAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    const token = localStorage.getItem('accessToken');
-    if (!token) return null;
-    if (!isTokenValid(token)) {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      return null;
-    }
-    return token;
+    return localStorage.getItem('accessToken') || null;
   } catch {
     return null;
   }
@@ -69,9 +72,26 @@ export function getStoredAccessToken(): string | null {
 export function getStoredRefreshToken(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    return localStorage.getItem('refreshToken');
+    return localStorage.getItem('refreshToken') || null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Stores updated authentication tokens in localStorage and dispatches auth-state-change event.
+ */
+export function setAuthTokens(accessToken: string, refreshToken?: string): void {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('accessToken', accessToken);
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', refreshToken);
+      }
+      window.dispatchEvent(new Event('auth-state-change'));
+    } catch {
+      // ignore SSR or restricted storage errors
+    }
   }
 }
 

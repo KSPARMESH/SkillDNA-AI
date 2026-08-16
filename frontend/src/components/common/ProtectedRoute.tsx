@@ -2,7 +2,7 @@
 
 import { useEffect, useState, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { getStoredAccessToken } from '@/utils/auth.util';
+import { getStoredAccessToken, getStoredRefreshToken } from '@/utils/auth.util';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -13,8 +13,8 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const token = getStoredAccessToken();
-    if (!token) {
+    const hasAuth = !!getStoredAccessToken() || !!getStoredRefreshToken();
+    if (!hasAuth) {
       setIsAuthenticated(false);
       router.replace('/login');
     } else {

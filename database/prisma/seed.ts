@@ -12,7 +12,22 @@ import {
 
 const prisma = new PrismaClient();
 
-async function main() {
+/**
+ * Production environment guard to prevent destructive database seeding in production.
+ * @throws Error if process.env.NODE_ENV === 'production'
+ */
+export function validateSeedEnvironment(env: string | undefined = process.env.NODE_ENV): void {
+  if (env === 'production') {
+    throw new Error(
+      'CRITICAL SECURITY ERROR: Destructive database seeding is strictly prohibited in PRODUCTION environment! Database seeding has been aborted to protect production data.',
+    );
+  }
+}
+
+export async function main() {
+  // 1. Explicit production environment guard - must execute before any DB operation
+  validateSeedEnvironment(process.env.NODE_ENV);
+
   console.log('🌱 Starting SkillDNA AI Database Seeding...');
 
   // ============================================================
@@ -332,11 +347,13 @@ async function main() {
 // EXECUTION
 // ============================================================
 
-main()
-  .catch((error) => {
-    console.error('❌ Database Seeding Failed:', error);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+if (typeof require !== 'undefined' && require.main === module) {
+  main()
+    .catch((error) => {
+      console.error('❌ Database Seeding Failed:', error);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}
