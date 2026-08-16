@@ -11,6 +11,7 @@ import {
 import {
   getSupportedPlatformsApi,
   getIntegrationsApi,
+  getOAuthUrlApi,
   connectPlatformApi,
   disconnectPlatformApi,
   syncPlatformApi,
@@ -23,7 +24,16 @@ export interface IntegrationData {
   isConnected: boolean;
   lastSyncedAt?: string | null;
   syncStatus?:
-    'SUCCESS' | 'SYNCING' | 'PENDING' | 'FAILED' | 'SYNC_FAILED' | 'RATE_LIMITED' | 'IDLE' | string;
+    | 'SUCCESS'
+    | 'SYNCING'
+    | 'PENDING'
+    | 'FAILED'
+    | 'SYNC_FAILED'
+    | 'RATE_LIMITED'
+    | 'PARTIAL'
+    | 'NEEDS_AUTH'
+    | 'IDLE'
+    | string;
   lastError?: string | null;
   metadata?: Record<string, any> | null;
   createdAt?: string;
@@ -339,6 +349,33 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
     fetchData();
+
+    // Check for LinkedIn OAuth redirect parameters
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const linkedinParam = params.get('linkedin');
+      const reasonParam = params.get('reason');
+
+      if (linkedinParam === 'connected') {
+        setSuccessMessage('LinkedIn connected successfully! Profile synchronization initiated.');
+        const url = new URL(window.location.href);
+        url.searchParams.delete('linkedin');
+        url.searchParams.delete('reason');
+        window.history.replaceState({}, document.title, url.pathname);
+      } else if (linkedinParam === 'error') {
+        const msg =
+          reasonParam === 'cancelled'
+            ? 'LinkedIn authorization was cancelled.'
+            : reasonParam === 'invalid_state'
+              ? 'OAuth state verification failed. Please try connecting again.'
+              : 'LinkedIn OAuth authorization failed. Please try connecting again.';
+        setErrorMessage(msg);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('linkedin');
+        url.searchParams.delete('reason');
+        window.history.replaceState({}, document.title, url.pathname);
+      }
+    }
   }, []);
 
   // Map of connected integrations keyed by normalized uppercase platform name
@@ -434,13 +471,39 @@ export default function IntegrationsPage() {
   }, [platformList]);
 
   // =========================================================================
-  // CONNECT MODAL HANDLERS
+  // CONNECT & OAUTH HANDLERS
   // =========================================================================
+  const handleConnectLinkedInOAuth = async () => {
+    setIsConnecting(true);
+    setConnectApiError(null);
+    try {
+      const res = await getOAuthUrlApi('LINKEDIN');
+      if (res && res.success && res.data?.url) {
+        window.location.href = res.data.url;
+      } else {
+        setConnectApiError(
+          res?.message || 'Failed to initiate LinkedIn OAuth. Please try again later.',
+        );
+        setIsConnecting(false);
+      }
+    } catch (err: any) {
+      setConnectApiError(err?.message || 'An error occurred while connecting to LinkedIn OAuth.');
+      setIsConnecting(false);
+    }
+  };
+
   const handleOpenConnectModal = (preselectedPlatform?: string) => {
     const normalized = preselectedPlatform
       ? normalizePlatformType(preselectedPlatform) || preselectedPlatform.toUpperCase()
       : null;
-    const platformToPick = normalized || supportedPlatforms[0] || 'GITHUB';
+
+    if (normalized === 'LINKEDIN') {
+      handleConnectLinkedInOAuth();
+      return;
+    }
+
+    const platformToPick =
+      normalized || supportedPlatforms.find((p) => p !== 'LINKEDIN') || 'GITHUB';
     setSelectedPlatform(platformToPick);
     setUsernameInput('');
     setConnectValidationError(null);
@@ -673,6 +736,32 @@ export default function IntegrationsPage() {
         setSuccessMessage(
           `Synchronized ${PLATFORM_CONFIGS[key]?.name || getPlatformDisplayName(key)} data successfully!`,
         );
+      } else if (
+        response &&
+        response.success &&
+        (response.data?.status === 'PARTIAL' || response.data?.status === 'NEEDS_AUTH')
+      ) {
+        const limitationMsg =
+          response.data.limitation ||
+          (response.data.status === 'NEEDS_AUTH'
+            ? 'OAuth authorization required for full profile sync.'
+            : 'Synchronized with partial metadata.');
+
+        setIntegrations((prev) =>
+          prev.map((item) =>
+            (normalizePlatformType(item.platform) || item.platform.toUpperCase()) === key
+              ? {
+                  ...item,
+                  syncStatus: response.data.status,
+                  lastError: limitationMsg,
+                  metadata: response.data?.data?.rawMetadata || item.metadata,
+                }
+              : item,
+          ),
+        );
+        setSuccessMessage(
+          `${PLATFORM_CONFIGS[key]?.name || getPlatformDisplayName(key)}: ${limitationMsg}`,
+        );
       } else {
         // Backend returned failure
         const failureReason =
@@ -812,6 +901,26 @@ export default function IntegrationsPage() {
           >
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
             Rate Limited
+          </span>
+        );
+      case 'PARTIAL':
+        return (
+          <span
+            id="sync-status-badge-partial"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-950/80 border border-amber-800/80 text-amber-300"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            Limited Sync
+          </span>
+        );
+      case 'NEEDS_AUTH':
+        return (
+          <span
+            id="sync-status-badge-needs-auth"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-950/80 border border-amber-800/80 text-amber-300"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            Needs OAuth
           </span>
         );
       case 'IDLE':
@@ -1367,6 +1476,18 @@ export default function IntegrationsPage() {
                           Disconnect
                         </button>
                       </>
+                    ) : platform.key === 'LINKEDIN' ? (
+                      <button
+                        id="connect-btn-linkedin"
+                        onClick={handleConnectLinkedInOAuth}
+                        disabled={isConnecting}
+                        className="w-full glass-button px-4 py-2 text-xs font-bold text-sky-400 border border-sky-800/80 bg-sky-950/40 rounded-lg flex items-center justify-center gap-1.5 hover:border-sky-400 hover:text-sky-300 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                          <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
+                        </svg>
+                        <span>Connect with LinkedIn</span>
+                      </button>
                     ) : (
                       <button
                         id={`connect-btn-${platform.key.toLowerCase()}`}
@@ -1461,73 +1582,128 @@ export default function IntegrationsPage() {
                   </select>
                 </div>
 
-                {/* Username Input */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="connect-username-input"
-                    className="text-xs font-semibold text-slate-300 flex justify-between"
-                  >
-                    <span>Platform Username / Handle</span>
-                    <span className="text-[10px] text-slate-500">Public profile identifier</span>
-                  </label>
-                  <input
-                    id="connect-username-input"
-                    type="text"
-                    placeholder={
-                      PLATFORM_CONFIGS[
-                        (normalizePlatformType(selectedPlatform) || selectedPlatform).toUpperCase()
-                      ]?.usernamePlaceholder || 'e.g. username'
-                    }
-                    value={usernameInput}
-                    onChange={(e) => {
-                      setUsernameInput(e.target.value);
-                      setConnectValidationError(null);
-                    }}
-                    disabled={isConnecting}
-                    autoFocus
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 disabled:opacity-50 font-mono"
-                  />
-                  {connectValidationError && (
-                    <p
-                      id="connect-validation-error"
-                      className="text-[10px] text-rose-400 font-medium"
-                    >
-                      {connectValidationError}
-                    </p>
-                  )}
-                  <p className="text-[11px] text-slate-400 leading-relaxed pt-1">
-                    🔒 SkillDNA fetches only your public achievements and telemetry. We never
-                    require passwords or private repository keys for username-based sync.
-                  </p>
-                </div>
+                {selectedPlatform === 'LINKEDIN' ? (
+                  <div className="space-y-4 py-2">
+                    <div className="p-4 bg-sky-950/40 border border-sky-800/80 rounded-xl space-y-2 text-xs text-sky-200">
+                      <div className="flex items-center gap-2 font-bold text-sky-300">
+                        <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                          <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
+                        </svg>
+                        LinkedIn OAuth 2.0 Authorization Required
+                      </div>
+                      <p className="leading-relaxed text-slate-300 text-[11px]">
+                        LinkedIn requires secure OAuth authorization to verify your identity. You
+                        will be redirected to LinkedIn to approve read access to your basic profile
+                        and email.
+                      </p>
+                    </div>
 
-                {/* Modal Footer Actions */}
-                <div className="flex justify-end items-center gap-3 pt-3 border-t border-slate-800">
-                  <button
-                    type="button"
-                    id="cancel-connect-btn"
-                    onClick={handleCloseConnectModal}
-                    disabled={isConnecting}
-                    className="px-4 py-2 text-xs font-semibold text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800 transition-all disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    id="submit-connect-btn"
-                    disabled={isConnecting}
-                    className="glass-button px-5 py-2 text-xs font-bold text-emerald-400 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-emerald-950/30"
-                  >
-                    {isConnecting ? (
-                      <>
-                        <div className="w-3.5 h-3.5 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" />
-                        Connecting & Syncing...
-                      </>
-                    ) : (
-                      'Connect Platform'
-                    )}
-                  </button>
-                </div>
+                    <div className="flex justify-end items-center gap-3 pt-3 border-t border-slate-800">
+                      <button
+                        type="button"
+                        id="cancel-connect-btn"
+                        onClick={handleCloseConnectModal}
+                        disabled={isConnecting}
+                        className="px-4 py-2 text-xs font-semibold text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800 transition-all disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        id="modal-connect-linkedin-btn"
+                        onClick={handleConnectLinkedInOAuth}
+                        disabled={isConnecting}
+                        className="glass-button px-5 py-2 text-xs font-bold text-sky-400 bg-sky-950/60 border border-sky-700 rounded-xl disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-sky-950/30 hover:border-sky-400"
+                      >
+                        {isConnecting ? (
+                          <>
+                            <div className="w-3.5 h-3.5 border-2 border-sky-400/30 border-t-sky-400 rounded-full animate-spin" />
+                            Redirecting to LinkedIn...
+                          </>
+                        ) : (
+                          <>
+                            <span>Authorize with LinkedIn</span>
+                            <span>→</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Username Input */}
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="connect-username-input"
+                        className="text-xs font-semibold text-slate-300 flex justify-between"
+                      >
+                        <span>Platform Username / Handle</span>
+                        <span className="text-[10px] text-slate-500">
+                          Public profile identifier
+                        </span>
+                      </label>
+                      <input
+                        id="connect-username-input"
+                        type="text"
+                        placeholder={
+                          PLATFORM_CONFIGS[
+                            (
+                              normalizePlatformType(selectedPlatform) || selectedPlatform
+                            ).toUpperCase()
+                          ]?.usernamePlaceholder || 'e.g. username'
+                        }
+                        value={usernameInput}
+                        onChange={(e) => {
+                          setUsernameInput(e.target.value);
+                          setConnectValidationError(null);
+                        }}
+                        disabled={isConnecting}
+                        autoFocus
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 disabled:opacity-50 font-mono"
+                      />
+                      {connectValidationError && (
+                        <p
+                          id="connect-validation-error"
+                          className="text-[10px] text-rose-400 font-medium"
+                        >
+                          {connectValidationError}
+                        </p>
+                      )}
+                      <p className="text-[11px] text-slate-400 leading-relaxed pt-1">
+                        🔒 SkillDNA fetches only your public achievements and telemetry. We never
+                        require passwords or private repository keys for username-based sync.
+                      </p>
+                    </div>
+
+                    {/* Modal Footer Actions */}
+                    <div className="flex justify-end items-center gap-3 pt-3 border-t border-slate-800">
+                      <button
+                        type="button"
+                        id="cancel-connect-btn"
+                        onClick={handleCloseConnectModal}
+                        disabled={isConnecting}
+                        className="px-4 py-2 text-xs font-semibold text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800 transition-all disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        id="submit-connect-btn"
+                        disabled={isConnecting}
+                        className="glass-button px-5 py-2 text-xs font-bold text-emerald-400 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-emerald-950/30"
+                      >
+                        {isConnecting ? (
+                          <>
+                            <div className="w-3.5 h-3.5 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" />
+                            Connecting & Syncing...
+                          </>
+                        ) : (
+                          'Connect & Sync'
+                        )}
+                      </button>
+                    </div>
+                  </>
+                )}
               </form>
             </div>
           </div>

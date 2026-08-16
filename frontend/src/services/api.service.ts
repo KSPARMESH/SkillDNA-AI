@@ -228,6 +228,15 @@ export async function getIntegrationStatusApi() {
 }
 
 /**
+ * Fetches OAuth authorization URL for a platform (e.g. LINKEDIN) via GET /api/v1/integrations/:platform/oauth/url
+ */
+export async function getOAuthUrlApi(platform: string) {
+  return fetchApi(`/integrations/${platform.toLowerCase()}/oauth/url`, {
+    method: 'GET',
+  });
+}
+
+/**
  * Connects a platform integration via POST /api/v1/integrations/connect
  */
 export async function connectPlatformApi(data: {

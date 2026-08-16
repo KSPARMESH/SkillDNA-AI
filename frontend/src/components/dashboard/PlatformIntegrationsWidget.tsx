@@ -116,6 +116,9 @@ export function PlatformIntegrationsWidget({
         <div className="space-y-2.5" id="dashboard-integrations-list">
           {connectedList.map((item) => {
             const isSyncSuccess = item.syncStatus === 'SUCCESS';
+            const isPartialOrNeedsAuth =
+              item.syncStatus === 'PARTIAL' || item.syncStatus === 'NEEDS_AUTH';
+            const isRateLimited = item.syncStatus === 'RATE_LIMITED';
             const isSyncFailed = item.syncStatus === 'FAILED' || item.syncStatus === 'ERROR';
             const isSyncing = item.syncStatus === 'SYNCING' || item.syncStatus === 'IN_PROGRESS';
 
@@ -135,7 +138,13 @@ export function PlatformIntegrationsWidget({
                   </div>
                   <div className="flex items-center gap-1 text-[10px] text-slate-500">
                     <Clock className="w-3 h-3 text-slate-400" />
-                    <span>Synced {formatRelativeTime(item.lastSyncedAt)}</span>
+                    <span>
+                      {isPartialOrNeedsAuth
+                        ? 'Limited sync'
+                        : isRateLimited
+                          ? 'Rate limited'
+                          : `Synced ${formatRelativeTime(item.lastSyncedAt)}`}
+                    </span>
                   </div>
                 </div>
 
@@ -145,6 +154,18 @@ export function PlatformIntegrationsWidget({
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-800/80">
                       <CheckCircle2 className="w-3 h-3" />
                       <span>Synced</span>
+                    </span>
+                  )}
+                  {isPartialOrNeedsAuth && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-800/80">
+                      <AlertTriangle className="w-3 h-3" />
+                      <span>{item.syncStatus === 'NEEDS_AUTH' ? 'Needs OAuth' : 'Limited'}</span>
+                    </span>
+                  )}
+                  {isRateLimited && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-950/80 text-amber-400 border border-amber-800/80">
+                      <AlertTriangle className="w-3 h-3" />
+                      <span>Rate Limited</span>
                     </span>
                   )}
                   {isSyncFailed && (
@@ -159,11 +180,15 @@ export function PlatformIntegrationsWidget({
                       <span>Syncing</span>
                     </span>
                   )}
-                  {!isSyncSuccess && !isSyncFailed && !isSyncing && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-950 text-slate-400 border border-slate-800">
-                      <span>Connected</span>
-                    </span>
-                  )}
+                  {!isSyncSuccess &&
+                    !isPartialOrNeedsAuth &&
+                    !isRateLimited &&
+                    !isSyncFailed &&
+                    !isSyncing && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-950 text-slate-400 border border-slate-800">
+                        <span>Connected</span>
+                      </span>
+                    )}
                 </div>
               </div>
             );

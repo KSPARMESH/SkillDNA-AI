@@ -55,7 +55,7 @@
     "docker:logs": "docker-compose logs -f",
     "docker:build": "docker-compose build",
     "audit": "pnpm audit",
-    "prepare": "husky install",
+    "prepare": "husky",
     "ci": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build"
   },
   "devDependencies": {

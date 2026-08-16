@@ -9,7 +9,7 @@ export class LinkedInAdapter extends BasePlatformAdapter {
   async validateCredentials(username: string, accessToken?: string): Promise<boolean> {
     if (!username) return false;
     if (!accessToken) {
-      return true; // Allows connecting handle, full sync requires OAuth token
+      return false; // LinkedIn requires OAuth2 access token for verified connection
     }
 
     try {

@@ -7,6 +7,8 @@ import {
 import { IntegrationRepository } from '../repositories/integration.repository';
 import { PlatformAdapterFactory } from '../adapters/adapter.factory';
 import { SyncService } from '../services/sync.service';
+import { PlatformType, getPlatformDisplayName } from '@skilldna/shared';
+import { IntegrationNotFoundError, OAuthAuthenticationError } from '../errors/integration.errors';
 
 export class IntegrationController {
   static async connect(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -14,6 +16,45 @@ export class IntegrationController {
       const userId = req.user!.id;
       const payload = validateConnectPlatform(req.body);
 
+      // 1. Resolve adapter
+      const adapter = PlatformAdapterFactory.getAdapter(payload.platform);
+
+      // 2. Pre-persistence verification
+      // LinkedIn requires OAuth token
+      if (payload.platform === PlatformType.LINKEDIN && !payload.accessToken) {
+        throw new OAuthAuthenticationError(
+          'LinkedIn requires OAuth authorization. Connect via LinkedIn OAuth2 flow.',
+        );
+      }
+
+      // Kaggle requires API credentials
+      if (
+        payload.platform === PlatformType.KAGGLE &&
+        !payload.accessToken &&
+        !process.env.KAGGLE_API_TOKEN &&
+        !process.env.KAGGLE_KEY
+      ) {
+        throw new OAuthAuthenticationError(
+          'Kaggle requires API credentials (KAGGLE_API_TOKEN / KAGGLE_KEY).',
+        );
+      }
+
+      // Validate account existence / credentials with platform
+      const isValid = await adapter.validateCredentials(payload.username, payload.accessToken);
+
+      if (!isValid) {
+        if (payload.platform === PlatformType.LINKEDIN) {
+          throw new OAuthAuthenticationError('LinkedIn OAuth token is invalid or expired.');
+        }
+        if (payload.platform === PlatformType.KAGGLE) {
+          throw new OAuthAuthenticationError('Kaggle credentials invalid or user not found.');
+        }
+        throw new IntegrationNotFoundError(
+          `${getPlatformDisplayName(payload.platform)} account '${payload.username}'`,
+        );
+      }
+
+      // 3. Persist integration ONLY AFTER validation succeeds
       const integration = await IntegrationRepository.upsertIntegration({
         userId,
         platform: payload.platform,
@@ -23,7 +64,7 @@ export class IntegrationController {
         metadata: payload.metadata,
       });
 
-      // Automatically trigger initial sync upon connection
+      // 4. Automatically trigger initial sync upon successful verified connection
       SyncService.syncPlatform(userId, payload.platform, { mode: 'FULL' }).catch((err) => {
         console.error(`Initial sync failed for ${payload.platform}:`, err.message);
       });

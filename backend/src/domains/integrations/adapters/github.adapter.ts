@@ -10,6 +10,53 @@ import {
 export class GitHubAdapter extends BasePlatformAdapter {
   readonly platformName = PlatformType.GITHUB;
 
+  private checkRateLimit(response: Response): RateLimitExceededError | null {
+    let remaining: string | null = null;
+    let reset: string | null = null;
+    let retryAfter: string | null = null;
+
+    if (response.headers) {
+      if (typeof (response.headers as any).get === 'function') {
+        remaining = response.headers.get('x-ratelimit-remaining');
+        reset = response.headers.get('x-ratelimit-reset');
+        retryAfter = response.headers.get('retry-after');
+      } else {
+        remaining = (response.headers as any)['x-ratelimit-remaining'] || null;
+        reset = (response.headers as any)['x-ratelimit-reset'] || null;
+        retryAfter = (response.headers as any)['retry-after'] || null;
+      }
+    }
+
+    const isExhausted =
+      remaining !== null && remaining !== undefined && String(remaining).trim() === '0';
+
+    if (response.status === 429 || (response.status === 403 && isExhausted)) {
+      let retryAfterSeconds: number | undefined;
+      let resetAt: Date | undefined;
+
+      if (retryAfter) {
+        const parsed = parseInt(String(retryAfter), 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          retryAfterSeconds = parsed;
+          resetAt = new Date(Date.now() + parsed * 1000);
+        }
+      }
+
+      if (!resetAt && reset) {
+        const resetUnixSec = parseInt(String(reset), 10);
+        if (!isNaN(resetUnixSec) && resetUnixSec > 0) {
+          resetAt = new Date(resetUnixSec * 1000);
+          const nowSec = Math.floor(Date.now() / 1000);
+          retryAfterSeconds = Math.max(1, resetUnixSec - nowSec);
+        }
+      }
+
+      return new RateLimitExceededError('GITHUB', retryAfterSeconds, resetAt);
+    }
+
+    return null;
+  }
+
   async validateCredentials(username: string, accessToken?: string): Promise<boolean> {
     if (!(await super.validateCredentials(username, accessToken))) {
       return false;
@@ -34,8 +81,17 @@ export class GitHubAdapter extends BasePlatformAdapter {
       if (response.status === 404) {
         return false;
       }
+
+      const rateLimitErr = this.checkRateLimit(response);
+      if (rateLimitErr) {
+        throw rateLimitErr;
+      }
+
       return response.ok;
     } catch (error) {
+      if (error instanceof RateLimitExceededError) {
+        throw error;
+      }
       return false;
     }
   }
@@ -50,34 +106,66 @@ export class GitHubAdapter extends BasePlatformAdapter {
       headers.Authorization = `Bearer ${accessToken}`;
     }
 
-    const userRes = await fetch(
-      `${INTEGRATION_CONSTANTS.API_ENDPOINTS.GITHUB}/users/${cleanUsername}`,
-      { headers },
-    );
+    let userRes: Response;
+    try {
+      userRes = await fetch(
+        `${INTEGRATION_CONSTANTS.API_ENDPOINTS.GITHUB}/users/${cleanUsername}`,
+        { headers },
+      );
+    } catch (err: any) {
+      throw new SyncFailedError(
+        'GITHUB',
+        `Network error communicating with GitHub: ${err.message}`,
+      );
+    }
 
     if (userRes.status === 404) {
       throw new IntegrationNotFoundError(`GitHub user '${cleanUsername}'`);
     }
-    if (userRes.status === 429) {
-      throw new RateLimitExceededError('GITHUB');
+
+    const rateLimitErr = this.checkRateLimit(userRes);
+    if (rateLimitErr) {
+      throw rateLimitErr;
     }
+
     if (!userRes.ok) {
       throw new SyncFailedError(
         'GITHUB',
-        `GitHub API error ${userRes.status}: ${userRes.statusText}`,
+        `GitHub API error ${userRes.status}: ${userRes.statusText || 'Forbidden'}`,
       );
     }
 
-    const userData: any = await userRes.json();
+    let userData: any;
+    try {
+      userData = await userRes.json();
+    } catch {
+      throw new SyncFailedError('GITHUB', 'Malformed JSON response from GitHub API');
+    }
 
-    const reposRes = await fetch(
-      `${INTEGRATION_CONSTANTS.API_ENDPOINTS.GITHUB}/users/${cleanUsername}/repos?per_page=100&sort=updated`,
-      { headers },
-    );
+    let reposRes: Response | undefined;
+    try {
+      reposRes = await fetch(
+        `${INTEGRATION_CONSTANTS.API_ENDPOINTS.GITHUB}/users/${cleanUsername}/repos?per_page=100&sort=updated`,
+        { headers },
+      );
+    } catch {
+      // Non-fatal network error for repos
+    }
 
     let repos: any[] = [];
-    if (reposRes.ok) {
-      repos = await reposRes.json();
+    if (reposRes) {
+      const reposRateLimitErr = this.checkRateLimit(reposRes);
+      if (reposRateLimitErr) {
+        throw reposRateLimitErr;
+      }
+
+      if (reposRes.ok) {
+        try {
+          repos = await reposRes.json();
+        } catch {
+          // Fallback to empty repos array
+        }
+      }
     }
 
     let totalStars = 0;

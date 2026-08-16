@@ -28,6 +28,42 @@ export class SyncService {
       try {
         const fetchedData = await adapter.fetchData(integration.username, integration.accessToken);
 
+        // Check if fetchedData contains an unverified identity or platform limitation notice
+        if (fetchedData.limitation) {
+          const isAuthLimitation =
+            fetchedData.limitation.toLowerCase().includes('oauth') ||
+            fetchedData.limitation.toLowerCase().includes('token') ||
+            fetchedData.limitation.toLowerCase().includes('authorization') ||
+            fetchedData.limitation.toLowerCase().includes('credential');
+
+          const limitationStatus = isAuthLimitation ? 'NEEDS_AUTH' : 'PARTIAL';
+
+          // Persist partial normalized data if any exists
+          await NormalizationService.normalizeAndPersist(userId, platform, fetchedData);
+
+          // Update sync status to non-success status WITHOUT setting lastSyncedAt
+          await IntegrationRepository.updateSyncStatus(
+            integration.id,
+            limitationStatus,
+            undefined, // Do NOT set lastSyncedAt for limited/partial sync
+            {
+              ...(fetchedData.rawMetadata || {}),
+              limitation: fetchedData.limitation,
+              lastError: fetchedData.limitation,
+            },
+          );
+
+          return {
+            integrationId: integration.id,
+            platform,
+            status: limitationStatus,
+            recordsProcessed: 0,
+            syncedAt: new Date(),
+            limitation: fetchedData.limitation,
+            data: fetchedData,
+          };
+        }
+
         await NormalizationService.normalizeAndPersist(userId, platform, fetchedData);
 
         await IntegrationRepository.updateSyncStatus(
@@ -50,7 +86,17 @@ export class SyncService {
         lastError = error;
 
         if (error instanceof RateLimitExceededError) {
-          await IntegrationRepository.updateSyncStatus(integration.id, 'RATE_LIMITED');
+          const resetIso = error.resetAt ? error.resetAt.toISOString() : undefined;
+          await IntegrationRepository.updateSyncStatus(
+            integration.id,
+            'RATE_LIMITED',
+            undefined, // Do NOT update lastSyncedAt
+            {
+              lastError: error.message,
+              retryAfterSeconds: error.retryAfterSeconds,
+              rateLimitResetAt: resetIso,
+            },
+          );
           return {
             integrationId: integration.id,
             platform,

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { IntegrationController } from '../controllers/integration.controller';
 import { authenticate } from '../../../middleware/auth.middleware';
 import githubRoutes from './github.routes';
+import linkedinRoutes from './linkedin.routes';
 import syncRoutes from './sync.routes';
 import webhookRoutes from './webhook.routes';
 
@@ -18,6 +19,7 @@ router.get('/status', authenticate, IntegrationController.getIntegrationStatus);
 
 // Mount platform specific and sync/webhook sub-routes
 router.use('/github', githubRoutes);
+router.use('/linkedin', linkedinRoutes);
 router.use('/sync', syncRoutes);
 router.use('/webhook', webhookRoutes);
 

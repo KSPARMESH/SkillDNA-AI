@@ -5,15 +5,28 @@ import { INTEGRATION_CONSTANTS } from '../constants/integration.constants';
 export class MediumAdapter extends BasePlatformAdapter {
   readonly platformName = PlatformType.MEDIUM;
 
-  async validateCredentials(username: string): Promise<boolean> {
-    if (!(await super.validateCredentials(username))) return false;
+  async validateCredentials(username: string, accessToken?: string): Promise<boolean> {
+    if (!(await super.validateCredentials(username, accessToken))) return false;
     const cleanUsername = this.sanitizeUsername(username);
+
+    if (accessToken) {
+      try {
+        const res = await fetch(`${INTEGRATION_CONSTANTS.API_ENDPOINTS.MEDIUM}/me`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (res.ok) return true;
+      } catch {
+        // Fall back to RSS check
+      }
+    }
 
     try {
       const res = await fetch(
         `${INTEGRATION_CONSTANTS.API_ENDPOINTS.MEDIUM_RSS}/@${cleanUsername}`,
       );
-      return res.ok;
+      if (!res.ok) return false;
+      const text = await res.text();
+      return text.includes('<rss') || text.includes('<channel') || text.includes('<feed');
     } catch {
       return false;
     }

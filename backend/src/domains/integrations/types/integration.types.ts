@@ -1,6 +1,7 @@
 import { PlatformType } from '@skilldna/shared';
 
-export type SyncStatus = 'IDLE' | 'SYNCING' | 'SUCCESS' | 'FAILED' | 'RATE_LIMITED';
+export type SyncStatus =
+  'IDLE' | 'SYNCING' | 'SUCCESS' | 'FAILED' | 'RATE_LIMITED' | 'PARTIAL' | 'NEEDS_AUTH';
 
 export type SyncMode = 'FULL' | 'INCREMENTAL';
 

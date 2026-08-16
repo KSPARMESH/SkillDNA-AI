@@ -4,8 +4,25 @@ import { PlatformType } from '@skilldna/shared';
 export class KaggleAdapter extends BasePlatformAdapter {
   readonly platformName = PlatformType.KAGGLE;
 
-  async validateCredentials(username: string): Promise<boolean> {
-    return super.validateCredentials(username);
+  async validateCredentials(username: string, accessToken?: string): Promise<boolean> {
+    if (!(await super.validateCredentials(username, accessToken))) return false;
+    const cleanUsername = this.sanitizeUsername(username);
+    const kaggleKey = accessToken || process.env.KAGGLE_API_TOKEN || process.env.KAGGLE_KEY;
+    if (!kaggleKey) {
+      return false; // Kaggle requires API credentials (KAGGLE_API_TOKEN / KAGGLE_KEY)
+    }
+
+    try {
+      const response = await fetch(`https://www.kaggle.com/api/v1/users/${cleanUsername}`, {
+        headers: {
+          Authorization: `Bearer ${kaggleKey}`,
+          'User-Agent': 'SkillDNA-AI',
+        },
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   async fetchData(username: string, accessToken?: string): Promise<NormalizedPlatformResult> {

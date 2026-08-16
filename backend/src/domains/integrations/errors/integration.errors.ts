@@ -31,12 +31,22 @@ export class OAuthAuthenticationError extends AppError {
 }
 
 export class RateLimitExceededError extends AppError {
-  constructor(platform: string, retryAfterSeconds?: number) {
+  readonly retryAfterSeconds?: number;
+  readonly resetAt?: Date;
+
+  constructor(platform: string, retryAfterSeconds?: number, resetAt?: Date) {
+    const formattedReset = resetAt
+      ? ` Reset at ${resetAt.toISOString()}.`
+      : retryAfterSeconds
+        ? ` Please retry after ${retryAfterSeconds} seconds.`
+        : '';
     super(
-      `Rate limit exceeded for platform '${platform}'.${retryAfterSeconds ? ` Please retry after ${retryAfterSeconds} seconds.` : ''}`,
+      `Rate limit exceeded for platform '${platform}'.${formattedReset}`,
       HttpStatusCode.TOO_MANY_REQUESTS,
       ApiErrorCode.RATE_LIMIT_EXCEEDED,
     );
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.resetAt = resetAt;
   }
 }
 

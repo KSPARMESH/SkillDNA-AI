@@ -10,14 +10,23 @@ export class OAuthService {
       throw new OAuthAuthenticationError(`OAuth is not supported for platform '${platform}'.`);
     }
 
-    const clientId = process.env[`${platform}_CLIENT_ID`] || 'DEMO_CLIENT_ID';
+    const clientId = process.env[`${platform}_CLIENT_ID`];
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    if (!clientId && isProduction) {
+      throw new OAuthAuthenticationError(
+        `OAuth client configuration missing for platform '${platform}'.`,
+      );
+    }
+
+    const finalClientId = clientId || 'DEMO_CLIENT_ID';
     const finalRedirectUri =
       redirectUri ||
       process.env[`${platform}_REDIRECT_URI`] ||
-      `https://api.skilldna.ai/api/v1/integrations/${platform.toLowerCase()}/oauth/callback`;
+      `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integrations/${platform.toLowerCase()}/oauth/callback`;
 
     const params = new URLSearchParams({
-      client_id: clientId,
+      client_id: finalClientId,
       redirect_uri: finalRedirectUri,
       response_type: 'code',
       scope: config.scope,
@@ -37,22 +46,31 @@ export class OAuthService {
       throw new OAuthAuthenticationError(`OAuth token exchange not supported for '${platform}'.`);
     }
 
+    if (!code || typeof code !== 'string' || code.trim() === '') {
+      throw new OAuthAuthenticationError('Authorization code is missing or empty.');
+    }
+
     const clientId = process.env[`${platform}_CLIENT_ID`];
     const clientSecret = process.env[`${platform}_CLIENT_SECRET`];
 
+    // Synthetic fallback allowed ONLY under explicit NODE_ENV === 'test'
     if (!clientId || !clientSecret) {
-      // Return synthetic token in local test mode if client credentials aren't set
-      return {
-        accessToken: `demo_oauth_token_${platform}_${Date.now()}`,
-        refreshToken: `demo_refresh_token_${platform}_${Date.now()}`,
-        expiresIn: 3600,
-      };
+      if (process.env.NODE_ENV === 'test') {
+        return {
+          accessToken: `mock_oauth_token_${platform}_${Date.now()}`,
+          refreshToken: `mock_refresh_token_${platform}_${Date.now()}`,
+          expiresIn: 3600,
+        };
+      }
+      throw new OAuthAuthenticationError(
+        `OAuth credentials are not configured for platform '${platform}'.`,
+      );
     }
 
     const finalRedirectUri =
       redirectUri ||
       process.env[`${platform}_REDIRECT_URI`] ||
-      `https://api.skilldna.ai/api/v1/integrations/${platform.toLowerCase()}/oauth/callback`;
+      `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integrations/${platform.toLowerCase()}/oauth/callback`;
 
     try {
       const response = await fetch(config.tokenUrl, {
@@ -64,7 +82,7 @@ export class OAuthService {
         body: new URLSearchParams({
           client_id: clientId,
           client_secret: clientSecret,
-          code,
+          code: code.trim(),
           redirect_uri: finalRedirectUri,
           grant_type: 'authorization_code',
         }),
@@ -72,13 +90,13 @@ export class OAuthService {
 
       if (!response.ok) {
         throw new OAuthAuthenticationError(
-          `Token endpoint returned HTTP status ${response.status}`,
+          `Provider token exchange failed with HTTP status ${response.status}`,
         );
       }
 
       const data: any = await response.json();
       if (!data.access_token) {
-        throw new OAuthAuthenticationError('No access_token returned by platform.');
+        throw new OAuthAuthenticationError('No access_token returned by OAuth provider.');
       }
 
       return {
@@ -88,7 +106,9 @@ export class OAuthService {
       };
     } catch (error: any) {
       if (error instanceof OAuthAuthenticationError) throw error;
-      throw new OAuthAuthenticationError(error.message || 'Failed to exchange authorization code.');
+      throw new OAuthAuthenticationError(
+        'Failed to exchange authorization code with OAuth provider.',
+      );
     }
   }
 
