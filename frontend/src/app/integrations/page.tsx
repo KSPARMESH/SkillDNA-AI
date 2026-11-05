@@ -350,28 +350,33 @@ export default function IntegrationsPage() {
   useEffect(() => {
     fetchData();
 
-    // Check for LinkedIn OAuth redirect parameters
+    // Check for OAuth callback status parameters.
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const linkedinParam = params.get('linkedin');
+      const provider = params.has('github') ? 'github' : params.has('linkedin') ? 'linkedin' : null;
+      const statusParam = provider ? params.get(provider) : null;
       const reasonParam = params.get('reason');
 
-      if (linkedinParam === 'connected') {
-        setSuccessMessage('LinkedIn connected successfully! Profile synchronization initiated.');
+      if (statusParam === 'connected') {
+        const providerName = provider === 'github' ? 'GitHub' : 'LinkedIn';
+        setSuccessMessage(
+          `${providerName} connected successfully! Profile synchronization initiated.`,
+        );
         const url = new URL(window.location.href);
-        url.searchParams.delete('linkedin');
+        if (provider) url.searchParams.delete(provider);
         url.searchParams.delete('reason');
         window.history.replaceState({}, document.title, url.pathname);
-      } else if (linkedinParam === 'error') {
+      } else if (statusParam === 'error') {
+        const providerName = provider === 'github' ? 'GitHub' : 'LinkedIn';
         const msg =
           reasonParam === 'cancelled'
-            ? 'LinkedIn authorization was cancelled.'
+            ? `${providerName} authorization was cancelled.`
             : reasonParam === 'invalid_state'
               ? 'OAuth state verification failed. Please try connecting again.'
-              : 'LinkedIn OAuth authorization failed. Please try connecting again.';
+              : `${providerName} OAuth authorization failed. Please try connecting again.`;
         setErrorMessage(msg);
         const url = new URL(window.location.href);
-        url.searchParams.delete('linkedin');
+        if (provider) url.searchParams.delete(provider);
         url.searchParams.delete('reason');
         window.history.replaceState({}, document.title, url.pathname);
       }
@@ -488,6 +493,25 @@ export default function IntegrationsPage() {
       }
     } catch (err: any) {
       setConnectApiError(err?.message || 'An error occurred while connecting to LinkedIn OAuth.');
+      setIsConnecting(false);
+    }
+  };
+
+  const handleConnectGitHubOAuth = async () => {
+    setIsConnecting(true);
+    setConnectApiError(null);
+    try {
+      const res = await getOAuthUrlApi('GITHUB');
+      if (res && res.success && res.data?.url) {
+        window.location.href = res.data.url;
+      } else {
+        setConnectApiError(
+          res?.message || 'Failed to initiate GitHub OAuth. Please try again later.',
+        );
+        setIsConnecting(false);
+      }
+    } catch (err: any) {
+      setConnectApiError(err?.message || 'An error occurred while connecting to GitHub OAuth.');
       setIsConnecting(false);
     }
   };
@@ -1631,6 +1655,29 @@ export default function IntegrationsPage() {
                   </div>
                 ) : (
                   <>
+                    {selectedPlatform === 'GITHUB' && (
+                      <div className="space-y-3 py-2">
+                        <div className="p-4 bg-slate-900/70 border border-slate-700 rounded-xl space-y-2 text-xs text-slate-200">
+                          <div className="font-bold text-slate-100">Connect with GitHub OAuth</div>
+                          <p className="leading-relaxed text-slate-400 text-[11px]">
+                            Authorize public profile and repository reads to improve sync
+                            reliability. No repository permissions are requested.
+                          </p>
+                          <button
+                            type="button"
+                            id="modal-connect-github-oauth-btn"
+                            onClick={handleConnectGitHubOAuth}
+                            disabled={isConnecting}
+                            className="glass-button px-5 py-2 text-xs font-bold text-slate-100 bg-slate-800 border border-slate-600 rounded-xl disabled:opacity-50"
+                          >
+                            {isConnecting ? 'Redirecting to GitHub...' : 'Authorize with GitHub'}
+                          </button>
+                        </div>
+                        <p className="text-center text-[10px] uppercase tracking-wider text-slate-500">
+                          Or connect a public username
+                        </p>
+                      </div>
+                    )}
                     {/* Username Input */}
                     <div className="space-y-1.5">
                       <label

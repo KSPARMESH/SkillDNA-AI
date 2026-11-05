@@ -4,7 +4,7 @@ import { authenticate } from '../../../middleware/auth.middleware';
 
 const router = Router();
 
-router.get('/oauth/url', GitHubController.getOAuthUrl);
+router.get('/oauth/url', authenticate, GitHubController.getOAuthUrl);
 router.get('/oauth/callback', GitHubController.oauthCallback);
 router.post('/sync/:username?', authenticate, GitHubController.sync);
 

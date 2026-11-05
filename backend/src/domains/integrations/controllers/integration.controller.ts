@@ -20,6 +20,13 @@ export class IntegrationController {
       const adapter = PlatformAdapterFactory.getAdapter(payload.platform);
 
       // 2. Pre-persistence verification
+      const githubAccessToken =
+        payload.platform === PlatformType.GITHUB ? undefined : payload.accessToken;
+      const githubRefreshToken =
+        payload.platform === PlatformType.GITHUB ? undefined : payload.refreshToken;
+      const githubMetadata =
+        payload.platform === PlatformType.GITHUB ? undefined : payload.metadata;
+
       // LinkedIn requires OAuth token
       if (payload.platform === PlatformType.LINKEDIN && !payload.accessToken) {
         throw new OAuthAuthenticationError(
@@ -40,7 +47,7 @@ export class IntegrationController {
       }
 
       // Validate account existence / credentials with platform
-      const isValid = await adapter.validateCredentials(payload.username, payload.accessToken);
+      const isValid = await adapter.validateCredentials(payload.username, githubAccessToken);
 
       if (!isValid) {
         if (payload.platform === PlatformType.LINKEDIN) {
@@ -59,9 +66,9 @@ export class IntegrationController {
         userId,
         platform: payload.platform,
         username: payload.username,
-        accessToken: payload.accessToken,
-        refreshToken: payload.refreshToken,
-        metadata: payload.metadata,
+        accessToken: githubAccessToken,
+        refreshToken: githubRefreshToken,
+        metadata: githubMetadata,
       });
 
       // 4. Automatically trigger initial sync upon successful verified connection

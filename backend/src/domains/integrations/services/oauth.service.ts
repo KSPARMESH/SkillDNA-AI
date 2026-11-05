@@ -29,9 +29,9 @@ export class OAuthService {
       client_id: finalClientId,
       redirect_uri: finalRedirectUri,
       response_type: 'code',
-      scope: config.scope,
       ...(state ? { state } : {}),
     });
+    if (config.scope) params.set('scope', config.scope);
 
     return `${config.authUrl}?${params.toString()}`;
   }

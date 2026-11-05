@@ -34,20 +34,28 @@ export class GitHubAdapter extends BasePlatformAdapter {
       let retryAfterSeconds: number | undefined;
       let resetAt: Date | undefined;
 
-      if (retryAfter) {
-        const parsed = parseInt(String(retryAfter), 10);
-        if (!isNaN(parsed) && parsed > 0) {
+      if (retryAfter !== null && retryAfter !== undefined) {
+        const value = String(retryAfter).trim();
+        const parsed = /^\d+$/.test(value) ? Number(value) : NaN;
+        if (Number.isSafeInteger(parsed) && parsed > 0) {
           retryAfterSeconds = parsed;
-          resetAt = new Date(Date.now() + parsed * 1000);
+          const candidateResetAt = new Date(Date.now() + parsed * 1000);
+          if (Number.isFinite(candidateResetAt.getTime())) {
+            resetAt = candidateResetAt;
+          }
         }
       }
 
-      if (!resetAt && reset) {
-        const resetUnixSec = parseInt(String(reset), 10);
-        if (!isNaN(resetUnixSec) && resetUnixSec > 0) {
-          resetAt = new Date(resetUnixSec * 1000);
-          const nowSec = Math.floor(Date.now() / 1000);
-          retryAfterSeconds = Math.max(1, resetUnixSec - nowSec);
+      if (!resetAt && reset !== null && reset !== undefined) {
+        const value = String(reset).trim();
+        const resetUnixSec = /^\d+$/.test(value) ? Number(value) : NaN;
+        if (Number.isSafeInteger(resetUnixSec) && resetUnixSec > 0) {
+          const candidateResetAt = new Date(resetUnixSec * 1000);
+          const delayMs = candidateResetAt.getTime() - Date.now();
+          if (Number.isFinite(candidateResetAt.getTime()) && delayMs > 0) {
+            resetAt = candidateResetAt;
+            retryAfterSeconds = Math.max(1, Math.ceil(delayMs / 1000));
+          }
         }
       }
 

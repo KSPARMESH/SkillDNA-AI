@@ -13,7 +13,8 @@ export const INTEGRATION_CONSTANTS = {
     [PlatformType.GITHUB]: {
       authUrl: 'https://github.com/login/oauth/authorize',
       tokenUrl: 'https://github.com/login/oauth/access_token',
-      scope: 'read:user repo',
+      // GitHub OAuth tokens without scopes can read public profile and repository data.
+      scope: '',
     },
     [PlatformType.LINKEDIN]: {
       authUrl: 'https://www.linkedin.com/oauth/v2/authorization',
